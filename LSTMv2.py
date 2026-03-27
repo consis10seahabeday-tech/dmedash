@@ -701,6 +701,8 @@ def model_stats() -> dict:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    import chromadb
+    chromadb.PersistentClient(path="./rca_chroma_db").delete_collection("rca_documents")
     np.random.seed(42)
 
     sample_rcas = [
