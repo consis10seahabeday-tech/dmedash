@@ -1,0 +1,2083 @@
+import { useState } from "react";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface SpecialItem {
+  id: string;
+  label: string;
+  icon: string;
+  type: "staging" | "status" | "replies" | "compare" | "report";
+}
+
+type NavItem = SpecialItem;
+
+// ── Data ──────────────────────────────────────────────────────────────────────
+
+const data: NavItem[] = [
+  { id: "staging", label: "Edit Staging Files",      icon: "⊟", type: "staging" },
+  { id: "status",  label: "Status",                  icon: "◎", type: "status"  },
+  { id: "replies", label: "Replies from Source Team", icon: "✉", type: "replies" },
+  { id: "compare", label: "Compare",                 icon: "⇄", type: "compare" },
+  { id: "report",  label: "Report",                  icon: "◧", type: "report"  },
+];
+
+// ── Staging rows ──────────────────────────────────────────────────────────────
+
+const ALL_STAGING_ROWS: string[] = Array.from({ length: 47 }, (_, i) => `DA${748 + i}`);
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const today = new Date();
+const formattedDate = today.toLocaleDateString("en-GB", {
+  day: "2-digit", month: "long", year: "numeric",
+});
+
+const defaultReport = `DME Health Check Report — ${formattedDate}
+──────────────────────────────────────────────────
+
+HEALTH CHECK JOBS
+─────────────────
+[✓] CPU usage check           — Within normal range (avg 18%)
+[✓] Memory usage check        — 6.2 GB / 16 GB used (38%)
+[✓] Disk usage check          — 112 GB / 500 GB used (22%)
+[✓] Network latency check     — Avg 4ms to gateway, no packet loss
+[✓] Docker containers check   — All 8 containers running, 0 exited
+[✓] System uptime check       — 14 days, 3 hours — stable
+[✓] Auth log scan             — No failed login attempts detected
+[✓] Firewall rules check      — Rules intact, no anomalies
+
+DATA COMPARISON
+───────────────
+[✓] Preprod vs Prod schema    — No deviations detected
+[✓] Row count comparison      — Orders table: preprod 48,210 / prod 48,210
+[✓] Config diff               — Environment variables aligned
+[✓] API response diff         — Endpoints returning identical payloads
+[✓] Database indexes          — Consistent across both environments
+[✓] Cron job schedules        — Matching in preprod and prod
+
+SUMMARY
+───────
+No deviations found between preprod and production environments.
+All health check jobs completed successfully.
+System is stable and operating within expected parameters.
+
+Signed off by: DME Automation
+`;
+
+// ── CopyButton ────────────────────────────────────────────────────────────────
+
+interface CopyButtonProps {
+  getText: string | (() => string);
+}
+
+function CopyButton({ getText }: CopyButtonProps): JSX.Element {
+  const [copied, setCopied] = useState<boolean>(false);
+
+  const fallbackCopy = (text: string): void => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand("copy");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (e) {
+      console.error("Copy failed", e);
+    }
+    document.body.removeChild(ta);
+  };
+
+  const handleCopy = (): void => {
+    const text = typeof getText === "function" ? getText() : getText;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(text)
+        .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); })
+        .catch(() => fallbackCopy(text));
+    } else {
+      fallbackCopy(text);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className={
+        copied
+          ? "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono cursor-pointer transition-all duration-200 bg-green-50 text-green-700 border border-green-200"
+          : "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono cursor-pointer transition-all duration-200 bg-transparent text-gray-400 border border-gray-200 hover:border-gray-300 hover:text-gray-500"
+      }
+    >
+      <span className="text-[10px]">{copied ? "✓" : "⎘"}</span>
+      {copied ? "copied" : "copy"}
+    </button>
+  );
+}
+
+// ── StagingPanel ──────────────────────────────────────────────────────────────
+
+function StagingPanel(): JSX.Element {
+  const [active, setActive] = useState<string[]>(ALL_STAGING_ROWS);
+  const [removed, setRemoved] = useState<string[]>([]);
+
+  const handleRemove = (row: string): void => {
+    setActive((prev) => prev.filter((r) => r !== row));
+    setRemoved((prev) => [...prev, row]);
+  };
+
+  const handleAddBack = (row: string): void => {
+    setRemoved((prev) => prev.filter((r) => r !== row));
+    // Insert back in original order
+    setActive((prev) => {
+      const combined = [...prev, row];
+      return ALL_STAGING_ROWS.filter((r) => combined.includes(r));
+    });
+  };
+
+  return (
+    <>
+      <header className="flex items-center px-8 py-5 border-b border-gray-100 shrink-0">
+        <div>
+          <h1 className="text-xs font-semibold tracking-widest uppercase text-gray-800 m-0">
+            Edit Staging Files
+          </h1>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            {active.length} active · {removed.length} removed for today
+          </p>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="flex gap-8 max-w-3xl">
+
+          {/* Active list */}
+          <div className="flex-1 flex flex-col gap-2 min-w-0">
+            <div className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 mb-1">
+              Active ({active.length})
+            </div>
+            {active.length === 0 && (
+              <div className="text-[13px] text-gray-300 italic py-4">No active rows</div>
+            )}
+            {active.map((row) => (
+              <div
+                key={row}
+                className="flex items-center justify-between px-4 py-2.5 rounded-md bg-gray-50 border border-gray-100 transition-colors duration-150 hover:border-gray-200"
+              >
+                <span className="text-[13px] font-mono text-gray-700">{row}</span>
+                <button
+                  onClick={() => handleRemove(row)}
+                  className="text-[11px] px-3 py-1 rounded cursor-pointer transition-all duration-150 text-red-500 border border-red-200 bg-transparent hover:bg-red-50"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Divider */}
+          <div className="w-px bg-gray-100 shrink-0 self-stretch" />
+
+          {/* Removed list */}
+          <div className="flex-1 flex flex-col gap-2 min-w-0">
+            <div className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 mb-1">
+              Removed for today ({removed.length})
+            </div>
+            {removed.length === 0 && (
+              <div className="text-[13px] text-gray-300 italic py-4">Nothing removed yet</div>
+            )}
+            {removed.map((row) => (
+              <div
+                key={row}
+                className="flex items-center justify-between px-4 py-2.5 rounded-md bg-red-50/50 border border-red-100 transition-colors duration-150 hover:border-red-200"
+              >
+                <span className="text-[13px] font-mono text-gray-400 line-through">{row}</span>
+                <button
+                  onClick={() => handleAddBack(row)}
+                  className="text-[11px] px-3 py-1 rounded cursor-pointer transition-all duration-150 text-green-600 border border-green-200 bg-transparent hover:bg-green-50"
+                >
+                  Add back
+                </button>
+              </div>
+            ))}
+          </div>
+
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="flex justify-end px-8 py-4 border-t border-gray-100 shrink-0">
+        <button
+          className="px-5 py-2 rounded-md text-sm text-white tracking-wide cursor-pointer transition-colors duration-150"
+          style={{ background: "#1a3a5c" }}
+          onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+            e.currentTarget.style.background = "#245080";
+          }}
+          onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
+            e.currentTarget.style.background = "#1a3a5c";
+          }}
+        >
+          Update Script
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ── StatusPanel ───────────────────────────────────────────────────────────────
+
+type Initiated = "yes" | "no";
+type JobStatus = "running" | "success" | "failed" | "-";
+type Arrived   = "yes" | "no" | "-";
+
+interface JobRow {
+  name: string;
+  initiated: Initiated;
+  status: JobStatus;
+}
+
+interface FtpRow {
+  name: string;
+  arrived: Arrived;
+  mailSent: Arrived;
+  replyReceived: Arrived;
+}
+
+const INITIAL_JOBS: JobRow[] = [
+  { name: "FTP from Mainframe", initiated: "yes", status: "success"  },
+  { name: "T24",                initiated: "yes", status: "running"  },
+  { name: "APAK",               initiated: "no",  status: "-"        },
+  { name: "RISK",               initiated: "no",  status: "-"        },
+];
+
+const INITIAL_FTP: FtpRow[] = Array.from({ length: 47 }, (_, i) => ({
+  name: `DA${748 + i}`,
+  arrived:       i < 12 ? "yes" : i === 12 ? "no" : "-",
+  mailSent:      i < 10 ? "yes" : i < 13 ? "no" : "-",
+  replyReceived: i < 8  ? "yes" : i < 13 ? "no" : "-",
+}));
+
+function StatusBadge({ status }: { status: JobStatus }): JSX.Element {
+  const styles: Record<JobStatus, string> = {
+    running: "bg-blue-50 text-blue-600 border-blue-200",
+    success: "bg-green-50 text-green-600 border-green-200",
+    failed:  "bg-red-50 text-red-600 border-red-200",
+    "-":     "bg-gray-50 text-gray-300 border-gray-100",
+  };
+  return (
+    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${styles[status]}`}>
+      {status === "-" ? "—" : status}
+    </span>
+  );
+}
+
+function InitiatedBadge({ value }: { value: Initiated }): JSX.Element {
+  return (
+    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${
+      value === "yes"
+        ? "bg-green-50 text-green-600 border-green-200"
+        : "bg-gray-50 text-gray-400 border-gray-200"
+    }`}>
+      {value}
+    </span>
+  );
+}
+
+function ArrivedBadge({ value }: { value: Arrived }): JSX.Element {
+  return (
+    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${
+      value === "yes" ? "bg-green-50 text-green-600 border-green-200"
+      : value === "no" ? "bg-red-50 text-red-600 border-red-200"
+      : "bg-gray-50 text-gray-300 border-gray-100"
+    }`}>
+      {value === "-" ? "—" : value}
+    </span>
+  );
+}
+
+function StatusPanel(): JSX.Element {
+  const [jobs] = useState<JobRow[]>(INITIAL_JOBS);
+  const [ftpRows] = useState<FtpRow[]>(INITIAL_FTP);
+
+  const thClass = "text-[10px] font-semibold tracking-widest uppercase text-gray-400 text-left px-4 py-2.5 bg-gray-50 border-b border-gray-100";
+  const tdClass = "px-4 py-2.5 text-[13px] text-gray-700 border-b border-gray-100 last:border-b-0";
+
+  return (
+    <>
+      <header className="flex items-center px-8 py-5 border-b border-gray-100 shrink-0">
+        <div>
+          <h1 className="text-xs font-semibold tracking-widest uppercase text-gray-800 m-0">Status</h1>
+          <p className="text-[11px] text-gray-400 mt-0.5">Job and FTP file status overview</p>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-8">
+
+        {/* ── Jobs table ── */}
+        <div>
+          <div className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 mb-2">
+            Job Status
+          </div>
+          <div className="rounded-md border border-gray-100 overflow-hidden max-w-3xl">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className={thClass}>Job</th>
+                  <th className={thClass}>Initiated</th>
+                  <th className={thClass}>Status</th>
+                  <th className={thClass}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map((job, i) => (
+                  <tr key={i} className={i % 2 === 1 ? "bg-gray-50/50" : "bg-white"}>
+                    <td className={tdClass}>{job.name}</td>
+                    <td className={tdClass}><InitiatedBadge value={job.initiated} /></td>
+                    <td className={tdClass}><StatusBadge status={job.status} /></td>
+                    <td className={tdClass}>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="text-[11px] px-2.5 py-1 rounded border cursor-pointer transition-colors duration-150 text-gray-600 border-gray-200 hover:bg-gray-100"
+                        >
+                          Re-trigger
+                        </button>
+                        <button
+                          className="text-[11px] px-2.5 py-1 rounded border cursor-pointer transition-colors duration-150 text-gray-600 border-gray-200 hover:bg-gray-100"
+                        >
+                          See log
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* ── FTP status table ── */}
+        <div>
+          <div className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 mb-2">
+            FTP Status
+          </div>
+          <div className="rounded-md border border-gray-100 overflow-hidden max-w-2xl">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className={thClass}>File</th>
+                  <th className={thClass}>Arrived</th>
+                  <th className={thClass}>Mail sent to source team</th>
+                  <th className={thClass}>Reply received from source team</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ftpRows.map((row, i) => (
+                  <tr key={i} className={i % 2 === 1 ? "bg-gray-50/50" : "bg-white"}>
+                    <td className={`${tdClass} font-mono`}>{row.name}</td>
+                    <td className={tdClass}><ArrivedBadge value={row.arrived} /></td>
+                    <td className={tdClass}><ArrivedBadge value={row.mailSent} /></td>
+                    <td className={tdClass}><ArrivedBadge value={row.replyReceived} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </>
+  );
+}
+
+// ── RepliesPanel ──────────────────────────────────────────────────────────────
+
+interface MailMessage {
+  id: string;
+  from: string;
+  subject: string;
+  date: string;
+  preview: string;
+  body: string;
+  fileRef: string;
+}
+
+const SAMPLE_MAILS: MailMessage[] = [
+  {
+    id: "MSG-001",
+    from: "ops.team@mainframe-source.com",
+    subject: "Re: DA748 — FTP file delayed",
+    date: "30 Mar 2026, 09:14",
+    fileRef: "DA748",
+    preview: "Apologies for the delay. The file will be resent by 10:00 AM today.",
+    body: "Hi team,\n\nApologies for the delay on DA748. Our FTP process encountered an issue during the overnight batch. The corrected file will be resent by 10:00 AM today.\n\nPlease confirm receipt once it arrives.\n\nRegards,\nOps Team",
+  },
+  {
+    id: "MSG-002",
+    from: "data.ops@source-bank.net",
+    subject: "Re: DA751 — File confirmation",
+    date: "30 Mar 2026, 08:47",
+    fileRef: "DA751",
+    preview: "DA751 was sent at 07:30 AM. Please check your FTP inbox.",
+    body: "Hello,\n\nDA751 was dispatched from our side at 07:30 AM this morning. Kindly check your FTP inbox and confirm receipt.\n\nIf there are any issues please reply to this mail.\n\nBest regards,\nData Operations",
+  },
+  {
+    id: "MSG-003",
+    from: "batch.support@clearing-sys.com",
+    subject: "Re: DA749 / DA750 — Missing files query",
+    date: "29 Mar 2026, 17:52",
+    fileRef: "DA749, DA750",
+    preview: "We have investigated. Both files were sent correctly — possible network drop.",
+    body: "Hi,\n\nWe have investigated the issue regarding DA749 and DA750. Both files were dispatched correctly from our end at 18:00 yesterday. It appears there may have been a network drop on the receiving side.\n\nWe recommend checking with your network team. We can resend if required.\n\nRegards,\nBatch Support",
+  },
+  {
+    id: "MSG-004",
+    from: "reconciliation@upstream-fin.io",
+    subject: "Re: DA753 — Data format issue",
+    date: "29 Mar 2026, 15:30",
+    fileRef: "DA753",
+    preview: "Acknowledged. We will fix the format and resend within the hour.",
+    body: "Dear team,\n\nThank you for flagging the format issue in DA753. Our team has identified the root cause — an encoding mismatch introduced in a recent update. We will fix the format and resend the file within the hour.\n\nSorry for the inconvenience.\n\nUpstream Finance Ops",
+  },
+  {
+    id: "MSG-005",
+    from: "ops.team@mainframe-source.com",
+    subject: "Re: DA755 — All clear",
+    date: "29 Mar 2026, 11:05",
+    fileRef: "DA755",
+    preview: "DA755 confirmed sent and no issues on our end.",
+    body: "Hi,\n\nJust to confirm — DA755 was sent successfully with no issues on our end. Please let us know if you need anything further.\n\nOps Team",
+  },
+];
+
+async function fetchMails(): Promise<MailMessage[]> {
+  const res = await fetch(`${FASTAPI_BASE}/mails`);
+  if (!res.ok) throw new Error(`Failed to fetch mails: ${res.status}`);
+  const json = await res.json();
+  // Expects { mails: MailMessage[] } or MailMessage[]
+  return Array.isArray(json) ? json : json.mails ?? SAMPLE_MAILS;
+}
+
+function RepliesPanel(): JSX.Element {
+  const [mails, setMails] = useState<MailMessage[]>(SAMPLE_MAILS);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>("");
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const handleFetch = async (): Promise<void> => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await fetchMails();
+      setMails(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const Spinner = (): JSX.Element => (
+    <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+    </svg>
+  );
+
+  return (
+    <>
+      <header className="flex items-center justify-between px-8 py-5 border-b border-gray-100 shrink-0">
+        <div>
+          <h1 className="text-xs font-semibold tracking-widest uppercase text-gray-800 m-0">
+            Replies from Source Team
+          </h1>
+          <p className="text-[11px] text-gray-400 mt-0.5">{mails.length} message{mails.length !== 1 ? "s" : ""}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {error && (
+            <span className="text-[11px] text-red-500 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+              ✕ {error}
+            </span>
+          )}
+          <button
+            onClick={handleFetch}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded text-[12px] cursor-pointer transition-all duration-150 disabled:opacity-60 disabled:cursor-not-allowed border"
+            style={{ background: "transparent", color: "#1a3a5c", borderColor: "#c3d4e6" }}
+            onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.background = "#f0f5fa"; }}
+            onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.background = "transparent"; }}
+          >
+            {loading ? <><Spinner /> Fetching…</> : "↻ Fetch mails"}
+          </button>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="flex flex-col gap-3 max-w-3xl">
+          {mails.map((mail) => {
+            const isOpen = expanded === mail.id;
+            return (
+              <div
+                key={mail.id}
+                className="rounded-md border border-gray-100 overflow-hidden transition-colors duration-150 hover:border-gray-200"
+              >
+                {/* Mail header row — clickable to expand */}
+                <button
+                  onClick={() => setExpanded(isOpen ? null : mail.id)}
+                  className="w-full flex items-start gap-4 px-5 py-4 text-left cursor-pointer bg-white hover:bg-gray-50/60 transition-colors duration-150"
+                >
+                  {/* Avatar */}
+                  <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-semibold text-white shrink-0 mt-0.5"
+                    style={{ background: "#1a3a5c" }}
+                  >
+                    {mail.from.charAt(0).toUpperCase()}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[12px] font-semibold text-gray-700 truncate">{mail.from}</span>
+                      <span className="text-[11px] text-gray-400 shrink-0">{mail.date}</span>
+                    </div>
+                    <div className="text-[13px] text-gray-800 font-medium mt-0.5 truncate">{mail.subject}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 font-medium shrink-0">
+                        {mail.fileRef}
+                      </span>
+                      {!isOpen && (
+                        <span className="text-[11px] text-gray-400 truncate">{mail.preview}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <span className="text-gray-300 text-[11px] shrink-0 mt-1">{isOpen ? "▲" : "▼"}</span>
+                </button>
+
+                {/* Expanded body */}
+                {isOpen && (
+                  <div className="px-5 pb-5 pt-1 border-t border-gray-100 bg-gray-50/40">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-[10px] text-gray-400 tracking-wide">Mail ID:</span>
+                      <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{mail.id}</span>
+                    </div>
+                    <pre className="text-[12px] text-gray-700 leading-relaxed whitespace-pre-wrap font-sans">
+                      {mail.body}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── ComparePanel ──────────────────────────────────────────────────────────────
+
+interface ParsedRow {
+  num: number | null;
+  name: string;
+  flag: string;
+  raw: string;
+}
+
+interface DiffRow {
+  name: string;
+  flag: string;
+  preprodNum: number | null;
+  prodNum: number | null;
+  mismatch: boolean;
+  zeroIssue: boolean;
+}
+
+function parseBlock(text: string): ParsedRow[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const parts = line.split(/\s+/);
+      const num = parts[0] !== undefined ? Number(parts[0]) : null;
+      const name = parts[1] ?? "";
+      const flag = parts[2] ?? "";
+      return { num: isNaN(num as number) ? null : num, name, flag, raw: line };
+    });
+}
+
+function runDiff(preprod: string, prod: string): DiffRow[] {
+  const preprodRows = parseBlock(preprod);
+  const prodRows = parseBlock(prod);
+
+  // Match by index — names are guaranteed to be in the same order
+  return preprodRows.map((prow, i) => {
+    const prodRow = prodRows[i] ?? null;
+    const preprodNum = prow.num;
+    const prodNum = prodRow?.num ?? null;
+    const mismatch = preprodNum !== prodNum;
+    const zeroIssue = preprodNum === 0 || prodNum === 0;
+    return {
+      name: prow.name,
+      flag: prow.flag || prodRow?.flag || "",
+      preprodNum,
+      prodNum,
+      mismatch,
+      zeroIssue,
+    };
+  });
+}
+
+function ComparePanel(): JSX.Element {
+  const [preprodText, setPreprodText] = useState<string>("");
+  const [prodText, setProdText] = useState<string>("");
+  const [results, setResults] = useState<DiffRow[] | null>(null);
+
+  const handleCompare = (): void => {
+    const diff = runDiff(preprodText, prodText);
+    setResults(diff);
+  };
+
+  const mismatches = results?.filter((r) => r.mismatch || r.zeroIssue) ?? [];
+  const allMatch = results !== null && mismatches.length === 0;
+
+  return (
+    <>
+      <header className="flex items-center px-8 py-5 border-b border-gray-100 shrink-0">
+        <div>
+          <h1 className="text-xs font-semibold tracking-widest uppercase text-gray-800 m-0">
+            Compare
+          </h1>
+          <p className="text-[11px] text-gray-400 mt-0.5">Preprod vs Production</p>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="flex flex-col gap-5 max-w-4xl">
+
+          {/* Text areas */}
+          <div className="flex gap-4">
+            {(["Preprod", "Prod"] as const).map((env) => (
+              <div key={env} className="flex flex-col flex-1 gap-2">
+                <label className="text-[11px] tracking-widest uppercase text-gray-400">
+                  {env}
+                </label>
+                <textarea
+                  rows={10}
+                  placeholder={`Paste ${env.toLowerCase()} output here...\ne.g. 12 STG_BC TRUE`}
+                  value={env === "Preprod" ? preprodText : prodText}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                    env === "Preprod"
+                      ? setPreprodText(e.target.value)
+                      : setProdText(e.target.value)
+                  }
+                  className="w-full bg-gray-50 border border-gray-200 text-gray-800 text-[13px] font-mono leading-relaxed rounded-md px-4 py-3.5 resize-none outline-none transition-colors duration-150 focus:border-gray-400 placeholder:text-gray-300"
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* Compare button */}
+          <div>
+            <button
+              onClick={handleCompare}
+              className="px-6 py-2 rounded-md text-sm text-white tracking-wide cursor-pointer transition-colors duration-150"
+              style={{ background: "#1a3a5c" }}
+              onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+                e.currentTarget.style.background = "#245080";
+              }}
+              onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
+                e.currentTarget.style.background = "#1a3a5c";
+              }}
+            >
+              Compare
+            </button>
+          </div>
+
+          {/* Results */}
+          {results !== null && (
+            <div className="flex flex-col gap-3">
+
+              {/* Summary badge */}
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] font-semibold tracking-widest uppercase text-gray-500">
+                  Results
+                </span>
+                {allMatch ? (
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">
+                    ✓ No deviations — {results.length} rows matched
+                  </span>
+                ) : (
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">
+                    {mismatches.length} deviation{mismatches.length > 1 ? "s" : ""} found
+                  </span>
+                )}
+              </div>
+
+              {/* Diff table */}
+              <div className="rounded-md border border-gray-100 overflow-hidden">
+                {/* Table header */}
+                <div className="grid grid-cols-[1fr_100px_100px_100px] bg-gray-50 border-b border-gray-100 px-4 py-2">
+                  <span className="text-[11px] font-semibold tracking-widest uppercase text-gray-400">Name</span>
+                  <span className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 text-center">Preprod</span>
+                  <span className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 text-center">Prod</span>
+                  <span className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 text-center">Status</span>
+                </div>
+
+                {/* Rows */}
+                {results.map((row, i) => {
+                  const isOdd = i % 2 === 1;
+                  const rowBg = row.mismatch || row.zeroIssue
+                    ? "bg-red-50"
+                    : isOdd ? "bg-gray-50/50" : "bg-white";
+
+                  return (
+                    <div
+                      key={i}
+                      className={`grid grid-cols-[1fr_100px_100px_100px] px-4 py-2.5 border-b border-gray-100 last:border-b-0 ${rowBg}`}
+                    >
+                      {/* Name */}
+                      <span className="text-[13px] font-mono text-gray-700">{row.name}</span>
+
+                      {/* Preprod number */}
+                      <span className={[
+                        "text-[13px] font-mono text-center",
+                        row.zeroIssue && row.preprodNum === 0 ? "text-orange-500 font-semibold" : "text-gray-700",
+                      ].join(" ")}>
+                        {row.preprodNum ?? "—"}
+                      </span>
+
+                      {/* Prod number */}
+                      <span className={[
+                        "text-[13px] font-mono text-center",
+                        row.zeroIssue && row.prodNum === 0 ? "text-orange-500 font-semibold" : "text-gray-700",
+                      ].join(" ")}>
+                        {row.prodNum ?? "—"}
+                      </span>
+
+                      {/* Status */}
+                      <div className="flex justify-center items-center">
+                        {row.zeroIssue ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 border border-orange-200 font-medium">
+                            ZERO
+                          </span>
+                        ) : row.mismatch ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200 font-medium">
+                            DIFF
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-600 border border-green-200 font-medium">
+                            OK
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const FASTAPI_BASE = "http://localhost:8000";
+
+// ── ReportPanel ───────────────────────────────────────────────────────────────
+
+type ReportActionStatus = "idle" | "loading" | "success" | "error";
+
+function ReportPanel(): JSX.Element {
+  const [reportText, setReportText]       = useState<string>(defaultReport);
+  const [loadStatus, setLoadStatus]       = useState<ReportActionStatus>("idle");
+  const [sendStatus, setSendStatus]       = useState<ReportActionStatus>("idle");
+  const [loadMessage, setLoadMessage]     = useState<string>("");
+  const [sendMessage, setSendMessage]     = useState<string>("");
+
+  // ── Load latest report ──────────────────────────────────────────────────────
+  const handleLoad = async (): Promise<void> => {
+    setLoadStatus("loading");
+    setLoadMessage("");
+    try {
+      const res = await fetch(`${FASTAPI_BASE}/report`);
+      if (!res.ok) {
+        const text = await res.text();
+        setLoadStatus("error");
+        setLoadMessage(`Error ${res.status}: ${text}`);
+      } else {
+        const json = await res.json();
+        // Accept { report: "..." } or { data: "..." } or plain string
+        const content: string =
+          typeof json === "string"
+            ? json
+            : json?.report ?? json?.data ?? JSON.stringify(json, null, 2);
+        setReportText(content);
+        setLoadStatus("success");
+        setLoadMessage("Report loaded");
+      }
+    } catch (err) {
+      setLoadStatus("error");
+      setLoadMessage(err instanceof Error ? err.message : "Request failed");
+    }
+    setTimeout(() => { setLoadStatus("idle"); setLoadMessage(""); }, 4000);
+  };
+
+  // ── Send report ─────────────────────────────────────────────────────────────
+  const handleSend = async (): Promise<void> => {
+    setSendStatus("loading");
+    setSendMessage("");
+    try {
+      const res = await fetch(`${FASTAPI_BASE}/send-report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ report: reportText }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        setSendStatus("error");
+        setSendMessage(`Error ${res.status}: ${text}`);
+      } else {
+        const json = await res.json().catch(() => ({}));
+        setSendStatus("success");
+        setSendMessage(json?.message ?? "Sent successfully");
+      }
+    } catch (err) {
+      setSendStatus("error");
+      setSendMessage(err instanceof Error ? err.message : "Request failed");
+    }
+    setTimeout(() => { setSendStatus("idle"); setSendMessage(""); }, 4000);
+  };
+
+  // ── Spinner SVG ─────────────────────────────────────────────────────────────
+  const Spinner = (): JSX.Element => (
+    <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+    </svg>
+  );
+
+  return (
+    <>
+      <header className="flex items-center justify-between px-8 py-5 border-b border-gray-100 shrink-0">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-xs font-semibold tracking-widest uppercase text-gray-800 m-0">
+              Report
+            </h1>
+            <span className="text-[11px] px-2.5 py-0.5 rounded text-gray-400 border border-gray-200 bg-gray-50">
+              {formattedDate}
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-0.5">Editable health check report</p>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-2">
+
+          {/* Load feedback */}
+          {loadStatus === "success" && (
+            <span className="text-[11px] text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+              ✓ {loadMessage}
+            </span>
+          )}
+          {loadStatus === "error" && (
+            <span className="text-[11px] text-red-500 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full max-w-[160px] truncate" title={loadMessage}>
+              ✕ {loadMessage}
+            </span>
+          )}
+
+          {/* Load button */}
+          <button
+            onClick={handleLoad}
+            disabled={loadStatus === "loading"}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded text-[12px] cursor-pointer transition-all duration-150 disabled:opacity-60 disabled:cursor-not-allowed border"
+            style={{
+              background: "transparent",
+              color: loadStatus === "error" ? "#b91c1c" : "#1a3a5c",
+              borderColor: loadStatus === "error" ? "#fca5a5" : "#c3d4e6",
+            }}
+            onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+              e.currentTarget.style.background = "#f0f5fa";
+            }}
+            onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            {loadStatus === "loading" ? <><Spinner /> Loading…</> : "↓ Load latest"}
+          </button>
+
+          {/* Send feedback */}
+          {sendStatus === "success" && (
+            <span className="text-[11px] text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+              ✓ {sendMessage}
+            </span>
+          )}
+          {sendStatus === "error" && (
+            <span className="text-[11px] text-red-500 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full max-w-[160px] truncate" title={sendMessage}>
+              ✕ {sendMessage}
+            </span>
+          )}
+
+          {/* Send button */}
+          <button
+            onClick={handleSend}
+            disabled={sendStatus === "loading"}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded text-[12px] text-white cursor-pointer transition-all duration-150 disabled:opacity-60 disabled:cursor-not-allowed"
+            style={{ background: sendStatus === "error" ? "#b91c1c" : "#1a3a5c" }}
+            onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+              if (sendStatus !== "loading") e.currentTarget.style.background = sendStatus === "error" ? "#991b1b" : "#245080";
+            }}
+            onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
+              e.currentTarget.style.background = sendStatus === "error" ? "#b91c1c" : "#1a3a5c";
+            }}
+          >
+            {sendStatus === "loading" ? <><Spinner /> Sending…</> : "↑ Send report"}
+          </button>
+
+          <CopyButton getText={() => reportText} />
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <textarea
+          value={reportText}
+          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+            setReportText(e.target.value)
+          }
+          className="w-full max-w-3xl min-h-[520px] bg-gray-50 border border-gray-200 text-gray-800 text-[13px] font-mono leading-[1.8] rounded-md px-6 py-5 resize-y outline-none transition-colors duration-150 focus:border-gray-400"
+        />
+      </div>
+    </>
+  );
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
+export default function DMEDashboard(): JSX.Element {
+  const [selected, setSelected] = useState<NavItem>(data[0]);
+  const [scriptPrevented, setScriptPrevented] = useState<boolean>(false);
+
+  const SideNavItem = ({ item }: { item: NavItem }): JSX.Element => {
+    const isActive = selected.id === item.id;
+    return (
+      <button
+        onClick={() => setSelected(item)}
+        className={
+          isActive
+            ? "flex items-center gap-2.5 w-full px-3 py-2 rounded text-left text-[13px] cursor-pointer transition-all duration-150 bg-white/15 text-white border border-white/20"
+            : "flex items-center gap-2.5 w-full px-3 py-2 rounded text-left text-[13px] cursor-pointer transition-all duration-150 bg-transparent text-white/50 border border-transparent hover:text-white/80"
+        }
+      >
+        <span className="tracking-wide">{item.label}</span>
+      </button>
+    );
+  };
+
+  return (
+    <div
+      className="flex h-screen w-full overflow-hidden"
+      style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}
+    >
+      {/* Sidebar */}
+      <aside className="flex flex-col w-50 h-full shrink-0" style={{ background: "#1a3a5c" }}>
+        <div className="px-5 py-5 border-b border-white/10">
+          <div className="text-[10px] tracking-[0.15em] uppercase text-white/40">dashboard</div>
+          <div className="text-lg font-bold tracking-widest text-white mt-0.5">DME</div>
+
+          <button
+            onClick={() => setScriptPrevented((p) => !p)}
+            className="mt-2 px-2 py-1 rounded text-left cursor-pointer transition-all duration-150"
+            style={{
+              background: scriptPrevented ? "rgba(220,38,38,0.18)" : "rgba(255,255,255,0.07)",
+              border: scriptPrevented ? "1px solid rgba(220,38,38,0.4)" : "1px solid rgba(255,255,255,0.12)",
+            }}
+          >
+            <div className="flex items-center gap-1">
+              <span className="text-[8px]" style={{ color: scriptPrevented ? "#fca5a5" : "rgba(255,255,255,0.5)" }}>
+                {scriptPrevented ? "●" : "○"}
+              </span>
+              <span
+                className="text-[9px] font-medium leading-tight"
+                style={{ color: scriptPrevented ? "#fca5a5" : "rgba(255,255,255,0.7)" }}
+              >
+                Prevent Script Run Today
+              </span>
+            </div>
+            <p className="text-[8px] mt-0.5 leading-snug" style={{ color: "rgba(255,255,255,0.3)" }}>
+              Prevents automation from triggering (manual)
+            </p>
+          </button>
+        </div>
+
+        <nav className="flex flex-col flex-1 px-2.5 py-3 overflow-y-auto">
+          <div className="flex flex-col gap-0.5">
+            {data.map((item) => (
+              <SideNavItem key={item.id} item={item} />
+            ))}
+          </div>
+        </nav>
+
+        <div className="px-5 py-3.5 border-t border-white/10">
+          <div className="text-[11px] text-white/20">v1.0.0</div>
+        </div>
+      </aside>
+
+      {/* Main panel */}
+      <main className="flex flex-col flex-1 overflow-hidden bg-white">
+        {selected.type === "staging"  && <StagingPanel />}
+        {selected.type === "status"   && <StatusPanel />}
+        {selected.type === "replies"  && <RepliesPanel />}
+        {selected.type === "compare"  && <ComparePanel />}
+        {selected.type === "report"   && <ReportPanel />}
+      </main>
+    </div>
+  );
+}import { useState } from "react";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface SpecialItem {
+  id: string;
+  label: string;
+  icon: string;
+  type: "staging" | "status" | "replies" | "compare" | "report";
+}
+
+type NavItem = SpecialItem;
+
+// ── Data ──────────────────────────────────────────────────────────────────────
+
+const data: NavItem[] = [
+  { id: "staging", label: "Edit Staging Files",      icon: "⊟", type: "staging" },
+  { id: "status",  label: "Status",                  icon: "◎", type: "status"  },
+  { id: "replies", label: "Replies from Source Team", icon: "✉", type: "replies" },
+  { id: "compare", label: "Compare",                 icon: "⇄", type: "compare" },
+  { id: "report",  label: "Report",                  icon: "◧", type: "report"  },
+];
+
+// ── Staging rows ──────────────────────────────────────────────────────────────
+
+const ALL_STAGING_ROWS: string[] = Array.from({ length: 47 }, (_, i) => `DA${748 + i}`);
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const today = new Date();
+const formattedDate = today.toLocaleDateString("en-GB", {
+  day: "2-digit", month: "long", year: "numeric",
+});
+
+const defaultReport = `DME Health Check Report — ${formattedDate}
+──────────────────────────────────────────────────
+
+HEALTH CHECK JOBS
+─────────────────
+[✓] CPU usage check           — Within normal range (avg 18%)
+[✓] Memory usage check        — 6.2 GB / 16 GB used (38%)
+[✓] Disk usage check          — 112 GB / 500 GB used (22%)
+[✓] Network latency check     — Avg 4ms to gateway, no packet loss
+[✓] Docker containers check   — All 8 containers running, 0 exited
+[✓] System uptime check       — 14 days, 3 hours — stable
+[✓] Auth log scan             — No failed login attempts detected
+[✓] Firewall rules check      — Rules intact, no anomalies
+
+DATA COMPARISON
+───────────────
+[✓] Preprod vs Prod schema    — No deviations detected
+[✓] Row count comparison      — Orders table: preprod 48,210 / prod 48,210
+[✓] Config diff               — Environment variables aligned
+[✓] API response diff         — Endpoints returning identical payloads
+[✓] Database indexes          — Consistent across both environments
+[✓] Cron job schedules        — Matching in preprod and prod
+
+SUMMARY
+───────
+No deviations found between preprod and production environments.
+All health check jobs completed successfully.
+System is stable and operating within expected parameters.
+
+Signed off by: DME Automation
+`;
+
+// ── CopyButton ────────────────────────────────────────────────────────────────
+
+interface CopyButtonProps {
+  getText: string | (() => string);
+}
+
+function CopyButton({ getText }: CopyButtonProps): JSX.Element {
+  const [copied, setCopied] = useState<boolean>(false);
+
+  const fallbackCopy = (text: string): void => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand("copy");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (e) {
+      console.error("Copy failed", e);
+    }
+    document.body.removeChild(ta);
+  };
+
+  const handleCopy = (): void => {
+    const text = typeof getText === "function" ? getText() : getText;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(text)
+        .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); })
+        .catch(() => fallbackCopy(text));
+    } else {
+      fallbackCopy(text);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className={
+        copied
+          ? "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono cursor-pointer transition-all duration-200 bg-green-50 text-green-700 border border-green-200"
+          : "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono cursor-pointer transition-all duration-200 bg-transparent text-gray-400 border border-gray-200 hover:border-gray-300 hover:text-gray-500"
+      }
+    >
+      <span className="text-[10px]">{copied ? "✓" : "⎘"}</span>
+      {copied ? "copied" : "copy"}
+    </button>
+  );
+}
+
+// ── StagingPanel ──────────────────────────────────────────────────────────────
+
+function StagingPanel(): JSX.Element {
+  const [active, setActive] = useState<string[]>(ALL_STAGING_ROWS);
+  const [removed, setRemoved] = useState<string[]>([]);
+
+  const handleRemove = (row: string): void => {
+    setActive((prev) => prev.filter((r) => r !== row));
+    setRemoved((prev) => [...prev, row]);
+  };
+
+  const handleAddBack = (row: string): void => {
+    setRemoved((prev) => prev.filter((r) => r !== row));
+    // Insert back in original order
+    setActive((prev) => {
+      const combined = [...prev, row];
+      return ALL_STAGING_ROWS.filter((r) => combined.includes(r));
+    });
+  };
+
+  return (
+    <>
+      <header className="flex items-center px-8 py-5 border-b border-gray-100 shrink-0">
+        <div>
+          <h1 className="text-xs font-semibold tracking-widest uppercase text-gray-800 m-0">
+            Edit Staging Files
+          </h1>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            {active.length} active · {removed.length} removed for today
+          </p>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="flex gap-8 max-w-3xl">
+
+          {/* Active list */}
+          <div className="flex-1 flex flex-col gap-2 min-w-0">
+            <div className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 mb-1">
+              Active ({active.length})
+            </div>
+            {active.length === 0 && (
+              <div className="text-[13px] text-gray-300 italic py-4">No active rows</div>
+            )}
+            {active.map((row) => (
+              <div
+                key={row}
+                className="flex items-center justify-between px-4 py-2.5 rounded-md bg-gray-50 border border-gray-100 transition-colors duration-150 hover:border-gray-200"
+              >
+                <span className="text-[13px] font-mono text-gray-700">{row}</span>
+                <button
+                  onClick={() => handleRemove(row)}
+                  className="text-[11px] px-3 py-1 rounded cursor-pointer transition-all duration-150 text-red-500 border border-red-200 bg-transparent hover:bg-red-50"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Divider */}
+          <div className="w-px bg-gray-100 shrink-0 self-stretch" />
+
+          {/* Removed list */}
+          <div className="flex-1 flex flex-col gap-2 min-w-0">
+            <div className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 mb-1">
+              Removed for today ({removed.length})
+            </div>
+            {removed.length === 0 && (
+              <div className="text-[13px] text-gray-300 italic py-4">Nothing removed yet</div>
+            )}
+            {removed.map((row) => (
+              <div
+                key={row}
+                className="flex items-center justify-between px-4 py-2.5 rounded-md bg-red-50/50 border border-red-100 transition-colors duration-150 hover:border-red-200"
+              >
+                <span className="text-[13px] font-mono text-gray-400 line-through">{row}</span>
+                <button
+                  onClick={() => handleAddBack(row)}
+                  className="text-[11px] px-3 py-1 rounded cursor-pointer transition-all duration-150 text-green-600 border border-green-200 bg-transparent hover:bg-green-50"
+                >
+                  Add back
+                </button>
+              </div>
+            ))}
+          </div>
+
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="flex justify-end px-8 py-4 border-t border-gray-100 shrink-0">
+        <button
+          className="px-5 py-2 rounded-md text-sm text-white tracking-wide cursor-pointer transition-colors duration-150"
+          style={{ background: "#1a3a5c" }}
+          onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+            e.currentTarget.style.background = "#245080";
+          }}
+          onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
+            e.currentTarget.style.background = "#1a3a5c";
+          }}
+        >
+          Update Script
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ── StatusPanel ───────────────────────────────────────────────────────────────
+
+type Initiated = "yes" | "no";
+type JobStatus = "running" | "success" | "failed" | "-";
+type Arrived   = "yes" | "no" | "-";
+
+interface JobRow {
+  name: string;
+  initiated: Initiated;
+  status: JobStatus;
+}
+
+interface FtpRow {
+  name: string;
+  arrived: Arrived;
+  mailSent: Arrived;
+  replyReceived: Arrived;
+}
+
+const INITIAL_JOBS: JobRow[] = [
+  { name: "FTP from Mainframe", initiated: "yes", status: "success"  },
+  { name: "T24",                initiated: "yes", status: "running"  },
+  { name: "APAK",               initiated: "no",  status: "-"        },
+  { name: "RISK",               initiated: "no",  status: "-"        },
+];
+
+const INITIAL_FTP: FtpRow[] = Array.from({ length: 47 }, (_, i) => ({
+  name: `DA${748 + i}`,
+  arrived:       i < 12 ? "yes" : i === 12 ? "no" : "-",
+  mailSent:      i < 10 ? "yes" : i < 13 ? "no" : "-",
+  replyReceived: i < 8  ? "yes" : i < 13 ? "no" : "-",
+}));
+
+function StatusBadge({ status }: { status: JobStatus }): JSX.Element {
+  const styles: Record<JobStatus, string> = {
+    running: "bg-blue-50 text-blue-600 border-blue-200",
+    success: "bg-green-50 text-green-600 border-green-200",
+    failed:  "bg-red-50 text-red-600 border-red-200",
+    "-":     "bg-gray-50 text-gray-300 border-gray-100",
+  };
+  return (
+    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${styles[status]}`}>
+      {status === "-" ? "—" : status}
+    </span>
+  );
+}
+
+function InitiatedBadge({ value }: { value: Initiated }): JSX.Element {
+  return (
+    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${
+      value === "yes"
+        ? "bg-green-50 text-green-600 border-green-200"
+        : "bg-gray-50 text-gray-400 border-gray-200"
+    }`}>
+      {value}
+    </span>
+  );
+}
+
+function ArrivedBadge({ value }: { value: Arrived }): JSX.Element {
+  return (
+    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${
+      value === "yes" ? "bg-green-50 text-green-600 border-green-200"
+      : value === "no" ? "bg-red-50 text-red-600 border-red-200"
+      : "bg-gray-50 text-gray-300 border-gray-100"
+    }`}>
+      {value === "-" ? "—" : value}
+    </span>
+  );
+}
+
+function StatusPanel(): JSX.Element {
+  const [jobs] = useState<JobRow[]>(INITIAL_JOBS);
+  const [ftpRows] = useState<FtpRow[]>(INITIAL_FTP);
+
+  const thClass = "text-[10px] font-semibold tracking-widest uppercase text-gray-400 text-left px-4 py-2.5 bg-gray-50 border-b border-gray-100";
+  const tdClass = "px-4 py-2.5 text-[13px] text-gray-700 border-b border-gray-100 last:border-b-0";
+
+  return (
+    <>
+      <header className="flex items-center px-8 py-5 border-b border-gray-100 shrink-0">
+        <div>
+          <h1 className="text-xs font-semibold tracking-widest uppercase text-gray-800 m-0">Status</h1>
+          <p className="text-[11px] text-gray-400 mt-0.5">Job and FTP file status overview</p>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-8">
+
+        {/* ── Jobs table ── */}
+        <div>
+          <div className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 mb-2">
+            Job Status
+          </div>
+          <div className="rounded-md border border-gray-100 overflow-hidden max-w-3xl">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className={thClass}>Job</th>
+                  <th className={thClass}>Initiated</th>
+                  <th className={thClass}>Status</th>
+                  <th className={thClass}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map((job, i) => (
+                  <tr key={i} className={i % 2 === 1 ? "bg-gray-50/50" : "bg-white"}>
+                    <td className={tdClass}>{job.name}</td>
+                    <td className={tdClass}><InitiatedBadge value={job.initiated} /></td>
+                    <td className={tdClass}><StatusBadge status={job.status} /></td>
+                    <td className={tdClass}>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="text-[11px] px-2.5 py-1 rounded border cursor-pointer transition-colors duration-150 text-gray-600 border-gray-200 hover:bg-gray-100"
+                        >
+                          Re-trigger
+                        </button>
+                        <button
+                          className="text-[11px] px-2.5 py-1 rounded border cursor-pointer transition-colors duration-150 text-gray-600 border-gray-200 hover:bg-gray-100"
+                        >
+                          See log
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* ── FTP status table ── */}
+        <div>
+          <div className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 mb-2">
+            FTP Status
+          </div>
+          <div className="rounded-md border border-gray-100 overflow-hidden max-w-2xl">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className={thClass}>File</th>
+                  <th className={thClass}>Arrived</th>
+                  <th className={thClass}>Mail sent to source team</th>
+                  <th className={thClass}>Reply received from source team</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ftpRows.map((row, i) => (
+                  <tr key={i} className={i % 2 === 1 ? "bg-gray-50/50" : "bg-white"}>
+                    <td className={`${tdClass} font-mono`}>{row.name}</td>
+                    <td className={tdClass}><ArrivedBadge value={row.arrived} /></td>
+                    <td className={tdClass}><ArrivedBadge value={row.mailSent} /></td>
+                    <td className={tdClass}><ArrivedBadge value={row.replyReceived} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </>
+  );
+}
+
+// ── RepliesPanel ──────────────────────────────────────────────────────────────
+
+interface MailMessage {
+  id: string;
+  from: string;
+  subject: string;
+  date: string;
+  preview: string;
+  body: string;
+  fileRef: string;
+}
+
+const SAMPLE_MAILS: MailMessage[] = [
+  {
+    id: "MSG-001",
+    from: "ops.team@mainframe-source.com",
+    subject: "Re: DA748 — FTP file delayed",
+    date: "30 Mar 2026, 09:14",
+    fileRef: "DA748",
+    preview: "Apologies for the delay. The file will be resent by 10:00 AM today.",
+    body: "Hi team,\n\nApologies for the delay on DA748. Our FTP process encountered an issue during the overnight batch. The corrected file will be resent by 10:00 AM today.\n\nPlease confirm receipt once it arrives.\n\nRegards,\nOps Team",
+  },
+  {
+    id: "MSG-002",
+    from: "data.ops@source-bank.net",
+    subject: "Re: DA751 — File confirmation",
+    date: "30 Mar 2026, 08:47",
+    fileRef: "DA751",
+    preview: "DA751 was sent at 07:30 AM. Please check your FTP inbox.",
+    body: "Hello,\n\nDA751 was dispatched from our side at 07:30 AM this morning. Kindly check your FTP inbox and confirm receipt.\n\nIf there are any issues please reply to this mail.\n\nBest regards,\nData Operations",
+  },
+  {
+    id: "MSG-003",
+    from: "batch.support@clearing-sys.com",
+    subject: "Re: DA749 / DA750 — Missing files query",
+    date: "29 Mar 2026, 17:52",
+    fileRef: "DA749, DA750",
+    preview: "We have investigated. Both files were sent correctly — possible network drop.",
+    body: "Hi,\n\nWe have investigated the issue regarding DA749 and DA750. Both files were dispatched correctly from our end at 18:00 yesterday. It appears there may have been a network drop on the receiving side.\n\nWe recommend checking with your network team. We can resend if required.\n\nRegards,\nBatch Support",
+  },
+  {
+    id: "MSG-004",
+    from: "reconciliation@upstream-fin.io",
+    subject: "Re: DA753 — Data format issue",
+    date: "29 Mar 2026, 15:30",
+    fileRef: "DA753",
+    preview: "Acknowledged. We will fix the format and resend within the hour.",
+    body: "Dear team,\n\nThank you for flagging the format issue in DA753. Our team has identified the root cause — an encoding mismatch introduced in a recent update. We will fix the format and resend the file within the hour.\n\nSorry for the inconvenience.\n\nUpstream Finance Ops",
+  },
+  {
+    id: "MSG-005",
+    from: "ops.team@mainframe-source.com",
+    subject: "Re: DA755 — All clear",
+    date: "29 Mar 2026, 11:05",
+    fileRef: "DA755",
+    preview: "DA755 confirmed sent and no issues on our end.",
+    body: "Hi,\n\nJust to confirm — DA755 was sent successfully with no issues on our end. Please let us know if you need anything further.\n\nOps Team",
+  },
+];
+
+async function fetchMails(): Promise<MailMessage[]> {
+  const res = await fetch(`${FASTAPI_BASE}/mails`);
+  if (!res.ok) throw new Error(`Failed to fetch mails: ${res.status}`);
+  const json = await res.json();
+  // Expects { mails: MailMessage[] } or MailMessage[]
+  return Array.isArray(json) ? json : json.mails ?? SAMPLE_MAILS;
+}
+
+function RepliesPanel(): JSX.Element {
+  const [mails, setMails] = useState<MailMessage[]>(SAMPLE_MAILS);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>("");
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const handleFetch = async (): Promise<void> => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await fetchMails();
+      setMails(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const Spinner = (): JSX.Element => (
+    <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+    </svg>
+  );
+
+  return (
+    <>
+      <header className="flex items-center justify-between px-8 py-5 border-b border-gray-100 shrink-0">
+        <div>
+          <h1 className="text-xs font-semibold tracking-widest uppercase text-gray-800 m-0">
+            Replies from Source Team
+          </h1>
+          <p className="text-[11px] text-gray-400 mt-0.5">{mails.length} message{mails.length !== 1 ? "s" : ""}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {error && (
+            <span className="text-[11px] text-red-500 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+              ✕ {error}
+            </span>
+          )}
+          <button
+            onClick={handleFetch}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded text-[12px] cursor-pointer transition-all duration-150 disabled:opacity-60 disabled:cursor-not-allowed border"
+            style={{ background: "transparent", color: "#1a3a5c", borderColor: "#c3d4e6" }}
+            onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.background = "#f0f5fa"; }}
+            onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.background = "transparent"; }}
+          >
+            {loading ? <><Spinner /> Fetching…</> : "↻ Fetch mails"}
+          </button>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="flex flex-col gap-3 max-w-3xl">
+          {mails.map((mail) => {
+            const isOpen = expanded === mail.id;
+            return (
+              <div
+                key={mail.id}
+                className="rounded-md border border-gray-100 overflow-hidden transition-colors duration-150 hover:border-gray-200"
+              >
+                {/* Mail header row — clickable to expand */}
+                <button
+                  onClick={() => setExpanded(isOpen ? null : mail.id)}
+                  className="w-full flex items-start gap-4 px-5 py-4 text-left cursor-pointer bg-white hover:bg-gray-50/60 transition-colors duration-150"
+                >
+                  {/* Avatar */}
+                  <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-semibold text-white shrink-0 mt-0.5"
+                    style={{ background: "#1a3a5c" }}
+                  >
+                    {mail.from.charAt(0).toUpperCase()}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[12px] font-semibold text-gray-700 truncate">{mail.from}</span>
+                      <span className="text-[11px] text-gray-400 shrink-0">{mail.date}</span>
+                    </div>
+                    <div className="text-[13px] text-gray-800 font-medium mt-0.5 truncate">{mail.subject}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 font-medium shrink-0">
+                        {mail.fileRef}
+                      </span>
+                      {!isOpen && (
+                        <span className="text-[11px] text-gray-400 truncate">{mail.preview}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <span className="text-gray-300 text-[11px] shrink-0 mt-1">{isOpen ? "▲" : "▼"}</span>
+                </button>
+
+                {/* Expanded body */}
+                {isOpen && (
+                  <div className="px-5 pb-5 pt-1 border-t border-gray-100 bg-gray-50/40">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-[10px] text-gray-400 tracking-wide">Mail ID:</span>
+                      <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{mail.id}</span>
+                    </div>
+                    <pre className="text-[12px] text-gray-700 leading-relaxed whitespace-pre-wrap font-sans">
+                      {mail.body}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── ComparePanel ──────────────────────────────────────────────────────────────
+
+interface ParsedRow {
+  num: number | null;
+  name: string;
+  flag: string;
+  raw: string;
+}
+
+interface DiffRow {
+  name: string;
+  flag: string;
+  preprodNum: number | null;
+  prodNum: number | null;
+  mismatch: boolean;
+  zeroIssue: boolean;
+}
+
+function parseBlock(text: string): ParsedRow[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const parts = line.split(/\s+/);
+      const num = parts[0] !== undefined ? Number(parts[0]) : null;
+      const name = parts[1] ?? "";
+      const flag = parts[2] ?? "";
+      return { num: isNaN(num as number) ? null : num, name, flag, raw: line };
+    });
+}
+
+function runDiff(preprod: string, prod: string): DiffRow[] {
+  const preprodRows = parseBlock(preprod);
+  const prodRows = parseBlock(prod);
+
+  // Match by index — names are guaranteed to be in the same order
+  return preprodRows.map((prow, i) => {
+    const prodRow = prodRows[i] ?? null;
+    const preprodNum = prow.num;
+    const prodNum = prodRow?.num ?? null;
+    const mismatch = preprodNum !== prodNum;
+    const zeroIssue = preprodNum === 0 || prodNum === 0;
+    return {
+      name: prow.name,
+      flag: prow.flag || prodRow?.flag || "",
+      preprodNum,
+      prodNum,
+      mismatch,
+      zeroIssue,
+    };
+  });
+}
+
+function ComparePanel(): JSX.Element {
+  const [preprodText, setPreprodText] = useState<string>("");
+  const [prodText, setProdText] = useState<string>("");
+  const [results, setResults] = useState<DiffRow[] | null>(null);
+
+  const handleCompare = (): void => {
+    const diff = runDiff(preprodText, prodText);
+    setResults(diff);
+  };
+
+  const mismatches = results?.filter((r) => r.mismatch || r.zeroIssue) ?? [];
+  const allMatch = results !== null && mismatches.length === 0;
+
+  return (
+    <>
+      <header className="flex items-center px-8 py-5 border-b border-gray-100 shrink-0">
+        <div>
+          <h1 className="text-xs font-semibold tracking-widest uppercase text-gray-800 m-0">
+            Compare
+          </h1>
+          <p className="text-[11px] text-gray-400 mt-0.5">Preprod vs Production</p>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="flex flex-col gap-5 max-w-4xl">
+
+          {/* Text areas */}
+          <div className="flex gap-4">
+            {(["Preprod", "Prod"] as const).map((env) => (
+              <div key={env} className="flex flex-col flex-1 gap-2">
+                <label className="text-[11px] tracking-widest uppercase text-gray-400">
+                  {env}
+                </label>
+                <textarea
+                  rows={10}
+                  placeholder={`Paste ${env.toLowerCase()} output here...\ne.g. 12 STG_BC TRUE`}
+                  value={env === "Preprod" ? preprodText : prodText}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                    env === "Preprod"
+                      ? setPreprodText(e.target.value)
+                      : setProdText(e.target.value)
+                  }
+                  className="w-full bg-gray-50 border border-gray-200 text-gray-800 text-[13px] font-mono leading-relaxed rounded-md px-4 py-3.5 resize-none outline-none transition-colors duration-150 focus:border-gray-400 placeholder:text-gray-300"
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* Compare button */}
+          <div>
+            <button
+              onClick={handleCompare}
+              className="px-6 py-2 rounded-md text-sm text-white tracking-wide cursor-pointer transition-colors duration-150"
+              style={{ background: "#1a3a5c" }}
+              onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+                e.currentTarget.style.background = "#245080";
+              }}
+              onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
+                e.currentTarget.style.background = "#1a3a5c";
+              }}
+            >
+              Compare
+            </button>
+          </div>
+
+          {/* Results */}
+          {results !== null && (
+            <div className="flex flex-col gap-3">
+
+              {/* Summary badge */}
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] font-semibold tracking-widest uppercase text-gray-500">
+                  Results
+                </span>
+                {allMatch ? (
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">
+                    ✓ No deviations — {results.length} rows matched
+                  </span>
+                ) : (
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">
+                    {mismatches.length} deviation{mismatches.length > 1 ? "s" : ""} found
+                  </span>
+                )}
+              </div>
+
+              {/* Diff table */}
+              <div className="rounded-md border border-gray-100 overflow-hidden">
+                {/* Table header */}
+                <div className="grid grid-cols-[1fr_100px_100px_100px] bg-gray-50 border-b border-gray-100 px-4 py-2">
+                  <span className="text-[11px] font-semibold tracking-widest uppercase text-gray-400">Name</span>
+                  <span className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 text-center">Preprod</span>
+                  <span className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 text-center">Prod</span>
+                  <span className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 text-center">Status</span>
+                </div>
+
+                {/* Rows */}
+                {results.map((row, i) => {
+                  const isOdd = i % 2 === 1;
+                  const rowBg = row.mismatch || row.zeroIssue
+                    ? "bg-red-50"
+                    : isOdd ? "bg-gray-50/50" : "bg-white";
+
+                  return (
+                    <div
+                      key={i}
+                      className={`grid grid-cols-[1fr_100px_100px_100px] px-4 py-2.5 border-b border-gray-100 last:border-b-0 ${rowBg}`}
+                    >
+                      {/* Name */}
+                      <span className="text-[13px] font-mono text-gray-700">{row.name}</span>
+
+                      {/* Preprod number */}
+                      <span className={[
+                        "text-[13px] font-mono text-center",
+                        row.zeroIssue && row.preprodNum === 0 ? "text-orange-500 font-semibold" : "text-gray-700",
+                      ].join(" ")}>
+                        {row.preprodNum ?? "—"}
+                      </span>
+
+                      {/* Prod number */}
+                      <span className={[
+                        "text-[13px] font-mono text-center",
+                        row.zeroIssue && row.prodNum === 0 ? "text-orange-500 font-semibold" : "text-gray-700",
+                      ].join(" ")}>
+                        {row.prodNum ?? "—"}
+                      </span>
+
+                      {/* Status */}
+                      <div className="flex justify-center items-center">
+                        {row.zeroIssue ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 border border-orange-200 font-medium">
+                            ZERO
+                          </span>
+                        ) : row.mismatch ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200 font-medium">
+                            DIFF
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-600 border border-green-200 font-medium">
+                            OK
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const FASTAPI_BASE = "http://localhost:8000";
+
+// ── ReportPanel ───────────────────────────────────────────────────────────────
+
+type ReportActionStatus = "idle" | "loading" | "success" | "error";
+
+function ReportPanel(): JSX.Element {
+  const [reportText, setReportText]       = useState<string>(defaultReport);
+  const [loadStatus, setLoadStatus]       = useState<ReportActionStatus>("idle");
+  const [sendStatus, setSendStatus]       = useState<ReportActionStatus>("idle");
+  const [loadMessage, setLoadMessage]     = useState<string>("");
+  const [sendMessage, setSendMessage]     = useState<string>("");
+
+  // ── Load latest report ──────────────────────────────────────────────────────
+  const handleLoad = async (): Promise<void> => {
+    setLoadStatus("loading");
+    setLoadMessage("");
+    try {
+      const res = await fetch(`${FASTAPI_BASE}/report`);
+      if (!res.ok) {
+        const text = await res.text();
+        setLoadStatus("error");
+        setLoadMessage(`Error ${res.status}: ${text}`);
+      } else {
+        const json = await res.json();
+        // Accept { report: "..." } or { data: "..." } or plain string
+        const content: string =
+          typeof json === "string"
+            ? json
+            : json?.report ?? json?.data ?? JSON.stringify(json, null, 2);
+        setReportText(content);
+        setLoadStatus("success");
+        setLoadMessage("Report loaded");
+      }
+    } catch (err) {
+      setLoadStatus("error");
+      setLoadMessage(err instanceof Error ? err.message : "Request failed");
+    }
+    setTimeout(() => { setLoadStatus("idle"); setLoadMessage(""); }, 4000);
+  };
+
+  // ── Send report ─────────────────────────────────────────────────────────────
+  const handleSend = async (): Promise<void> => {
+    setSendStatus("loading");
+    setSendMessage("");
+    try {
+      const res = await fetch(`${FASTAPI_BASE}/send-report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ report: reportText }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        setSendStatus("error");
+        setSendMessage(`Error ${res.status}: ${text}`);
+      } else {
+        const json = await res.json().catch(() => ({}));
+        setSendStatus("success");
+        setSendMessage(json?.message ?? "Sent successfully");
+      }
+    } catch (err) {
+      setSendStatus("error");
+      setSendMessage(err instanceof Error ? err.message : "Request failed");
+    }
+    setTimeout(() => { setSendStatus("idle"); setSendMessage(""); }, 4000);
+  };
+
+  // ── Spinner SVG ─────────────────────────────────────────────────────────────
+  const Spinner = (): JSX.Element => (
+    <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+    </svg>
+  );
+
+  return (
+    <>
+      <header className="flex items-center justify-between px-8 py-5 border-b border-gray-100 shrink-0">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-xs font-semibold tracking-widest uppercase text-gray-800 m-0">
+              Report
+            </h1>
+            <span className="text-[11px] px-2.5 py-0.5 rounded text-gray-400 border border-gray-200 bg-gray-50">
+              {formattedDate}
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-0.5">Editable health check report</p>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-2">
+
+          {/* Load feedback */}
+          {loadStatus === "success" && (
+            <span className="text-[11px] text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+              ✓ {loadMessage}
+            </span>
+          )}
+          {loadStatus === "error" && (
+            <span className="text-[11px] text-red-500 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full max-w-[160px] truncate" title={loadMessage}>
+              ✕ {loadMessage}
+            </span>
+          )}
+
+          {/* Load button */}
+          <button
+            onClick={handleLoad}
+            disabled={loadStatus === "loading"}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded text-[12px] cursor-pointer transition-all duration-150 disabled:opacity-60 disabled:cursor-not-allowed border"
+            style={{
+              background: "transparent",
+              color: loadStatus === "error" ? "#b91c1c" : "#1a3a5c",
+              borderColor: loadStatus === "error" ? "#fca5a5" : "#c3d4e6",
+            }}
+            onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+              e.currentTarget.style.background = "#f0f5fa";
+            }}
+            onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            {loadStatus === "loading" ? <><Spinner /> Loading…</> : "↓ Load latest"}
+          </button>
+
+          {/* Send feedback */}
+          {sendStatus === "success" && (
+            <span className="text-[11px] text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+              ✓ {sendMessage}
+            </span>
+          )}
+          {sendStatus === "error" && (
+            <span className="text-[11px] text-red-500 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full max-w-[160px] truncate" title={sendMessage}>
+              ✕ {sendMessage}
+            </span>
+          )}
+
+          {/* Send button */}
+          <button
+            onClick={handleSend}
+            disabled={sendStatus === "loading"}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded text-[12px] text-white cursor-pointer transition-all duration-150 disabled:opacity-60 disabled:cursor-not-allowed"
+            style={{ background: sendStatus === "error" ? "#b91c1c" : "#1a3a5c" }}
+            onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+              if (sendStatus !== "loading") e.currentTarget.style.background = sendStatus === "error" ? "#991b1b" : "#245080";
+            }}
+            onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
+              e.currentTarget.style.background = sendStatus === "error" ? "#b91c1c" : "#1a3a5c";
+            }}
+          >
+            {sendStatus === "loading" ? <><Spinner /> Sending…</> : "↑ Send report"}
+          </button>
+
+          <CopyButton getText={() => reportText} />
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <textarea
+          value={reportText}
+          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+            setReportText(e.target.value)
+          }
+          className="w-full max-w-3xl min-h-[520px] bg-gray-50 border border-gray-200 text-gray-800 text-[13px] font-mono leading-[1.8] rounded-md px-6 py-5 resize-y outline-none transition-colors duration-150 focus:border-gray-400"
+        />
+      </div>
+    </>
+  );
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
+export default function DMEDashboard(): JSX.Element {
+  const [selected, setSelected] = useState<NavItem>(data[0]);
+  const [scriptPrevented, setScriptPrevented] = useState<boolean>(false);
+
+  const SideNavItem = ({ item }: { item: NavItem }): JSX.Element => {
+    const isActive = selected.id === item.id;
+    return (
+      <button
+        onClick={() => setSelected(item)}
+        className={
+          isActive
+            ? "flex items-center gap-2.5 w-full px-3 py-2 rounded text-left text-[13px] cursor-pointer transition-all duration-150 bg-white/15 text-white border border-white/20"
+            : "flex items-center gap-2.5 w-full px-3 py-2 rounded text-left text-[13px] cursor-pointer transition-all duration-150 bg-transparent text-white/50 border border-transparent hover:text-white/80"
+        }
+      >
+        <span className="tracking-wide">{item.label}</span>
+      </button>
+    );
+  };
+
+  return (
+    <div
+      className="flex h-screen w-full overflow-hidden"
+      style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}
+    >
+      {/* Sidebar */}
+      <aside className="flex flex-col w-50 h-full shrink-0" style={{ background: "#1a3a5c" }}>
+        <div className="px-5 py-5 border-b border-white/10">
+          <div className="text-[10px] tracking-[0.15em] uppercase text-white/40">dashboard</div>
+          <div className="text-lg font-bold tracking-widest text-white mt-0.5">DME</div>
+
+          <button
+            onClick={() => setScriptPrevented((p) => !p)}
+            className="mt-2 px-2 py-1 rounded text-left cursor-pointer transition-all duration-150"
+            style={{
+              background: scriptPrevented ? "rgba(220,38,38,0.18)" : "rgba(255,255,255,0.07)",
+              border: scriptPrevented ? "1px solid rgba(220,38,38,0.4)" : "1px solid rgba(255,255,255,0.12)",
+            }}
+          >
+            <div className="flex items-center gap-1">
+              <span className="text-[8px]" style={{ color: scriptPrevented ? "#fca5a5" : "rgba(255,255,255,0.5)" }}>
+                {scriptPrevented ? "●" : "○"}
+              </span>
+              <span
+                className="text-[9px] font-medium leading-tight"
+                style={{ color: scriptPrevented ? "#fca5a5" : "rgba(255,255,255,0.7)" }}
+              >
+                Prevent Script Run Today
+              </span>
+            </div>
+            <p className="text-[8px] mt-0.5 leading-snug" style={{ color: "rgba(255,255,255,0.3)" }}>
+              Prevents automation from triggering (manual)
+            </p>
+          </button>
+        </div>
+
+        <nav className="flex flex-col flex-1 px-2.5 py-3 overflow-y-auto">
+          <div className="flex flex-col gap-0.5">
+            {data.map((item) => (
+              <SideNavItem key={item.id} item={item} />
+            ))}
+          </div>
+        </nav>
+
+        <div className="px-5 py-3.5 border-t border-white/10">
+          <div className="text-[11px] text-white/20">v1.0.0</div>
+        </div>
+      </aside>
+
+      {/* Main panel */}
+      <main className="flex flex-col flex-1 overflow-hidden bg-white">
+        {selected.type === "staging"  && <StagingPanel />}
+        {selected.type === "status"   && <StatusPanel />}
+        {selected.type === "replies"  && <RepliesPanel />}
+        {selected.type === "compare"  && <ComparePanel />}
+        {selected.type === "report"   && <ReportPanel />}
+      </main>
+    </div>
+  );
+}
