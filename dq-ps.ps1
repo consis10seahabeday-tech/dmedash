@@ -94,3 +94,34 @@ $Mail.Send()
 
 # 6. Clean up the COM Object from memory
 [System.Runtime.Interopservices.Marshal]::ReleaseComObject($Outlook) | Out-Null
+
+
+
+function downloadAndRedirect(dataString, fileName = "data.csv") {
+  // 1. Create a Blob from the string data
+  // We use 'text/csv' to tell the browser it's a spreadsheet file
+  const blob = new Blob([dataString], { type: 'text/csv;charset=utf-8;' });
+
+  // 2. Create a temporary anchor element
+  const link = document.createElement("a");
+  
+  // 3. Create a URL for the Blob and set it as the href
+  const url = URL.createObjectURL(blob);
+  link.setAttribute("href", url);
+  link.setAttribute("download", fileName);
+  
+  // 4. Append to body, click it, and remove it
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  // 5. Clean up the URL object to free up memory
+  URL.revokeObjectURL(url);
+
+  // 6. Redirect to SharePoint (or any link)
+  // Using a slight timeout ensures the download process initializes first
+  setTimeout(() => {
+    window.location.href = "https://yourcompany.sharepoint.com/sites/your-link-here";
+  }, 500);
+}
