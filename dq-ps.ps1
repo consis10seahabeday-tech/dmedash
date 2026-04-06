@@ -45,3 +45,32 @@ while (-not $fileFound -and $attempts -lt $maxAttempts) {
         Write-Error "Maximum attempts reached (10 mins). Script terminated."
     }
 }
+
+function getSubstringBetween(word1, word2, str) {
+  // Find the starting position (index after word1)
+  const startIndex = str.indexOf(word1);
+  if (startIndex === -1) return null; // word1 not found
+
+  const contentStart = startIndex + word1.length;
+  
+  // Case 1: word2 is "end" - get everything after word1 (up to 50 chars)
+  if (word2.toLowerCase() === "end") {
+    return str.substring(contentStart, contentStart + 50);
+  }
+
+  // Case 2: Find word2 after word1
+  const endIndex = str.indexOf(word2, contentStart);
+  
+  if (endIndex === -1) {
+    // If word2 isn't found, default to the next 50 chars after word1
+    return str.substring(contentStart, contentStart + 50);
+  }
+
+  // Extract the content
+  const content = str.substring(contentStart, endIndex);
+
+  // Return logic: if less than 50, return all; otherwise, return first 50
+  return content.length < 50 
+    ? content 
+    : content.substring(0, 50);
+}
