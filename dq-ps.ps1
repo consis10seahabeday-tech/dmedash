@@ -1,3 +1,5 @@
+#Install-Module -Name "PnP.PowerShell" -Scope CurrentUser -AllowClobber
+Import-Module PnP.PowerShell
 # 1. Dynamically locate the HTML file in the script's current directory
 $htmlPath = Join-Path -Path $PSScriptRoot -ChildPath "index.html"
 
