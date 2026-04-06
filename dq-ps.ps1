@@ -74,3 +74,23 @@ function getSubstringBetween(word1, word2, str) {
     ? content 
     : content.substring(0, 50);
 }
+
+# 1. Create the Outlook Application Object
+$Outlook = New-Object -ComObject Outlook.Application
+
+# 2. Create a new Mail Item (0 represents a standard mail item)
+$Mail = $Outlook.CreateItem(0)
+
+# 3. Configure the Mail Details
+$Mail.To = "recipient@bank.com"
+$Mail.Subject = "Automation Success: INC File Uploaded"
+$Mail.Body = "The modernization script has successfully moved the file to SharePoint.`n`nTimestamp: $(Get-Date)"
+
+# 4. (Optional) Attach a file if needed
+# $Mail.Attachments.Add("C:\Path\To\Your\File.csv")
+
+# 5. Send the Mail
+$Mail.Send()
+
+# 6. Clean up the COM Object from memory
+[System.Runtime.Interopservices.Marshal]::ReleaseComObject($Outlook) | Out-Null
