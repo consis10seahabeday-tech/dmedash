@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Incident Management Form</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f4f4f4; }
+        .container { max-width: 500px; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h2 { color: #0078d4; margin-top: 0; }
+        .field { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #0078d4; color: white; padding: 12px; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; }
+        button:hover { background-color: #005a9e; }
+        #message { margin-top: 15px; padding: 10px; display: none; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Log New Incident</h2>
+    
+    <div class="field">
+        <label>Incident Number</label>
+        <input type="text" id="incidentNum" placeholder="e.g. INC1234567">
+    </div>
+
+    <div class="field">
+        <label>Category</label>
+        <select id="category">
+            <option value="Hardware">Hardware</option>
+            <option value="Software">Software</option>
+            <option value="Network">Network</option>
+            <option value="Database">Database</option>
+        </select>
+    </div>
+
+    <div class="field">
+        <label>Subcategory</label>
+        <input type="text" id="subCategory" placeholder="e.g. Connectivity Issue">
+    </div>
+
+    <div class="field">
+        <label>Summary</label>
+        <input type="text" id="summary" placeholder="Brief description">
+    </div>
+
+    <div class="field">
+        <label>RCA (Root Cause Analysis)</label>
+        <textarea id="rca" rows="4" placeholder="Detailed explanation of the cause"></textarea>
+    </div>
+
+    <button onclick="submitToSharePoint()">Submit Incident</button>
+    <div id="message"></div>
+</div>
+
+<script>
+    // --- PLACEHOLDERS: PASTE YOUR LINKS HERE ---
+    const SITE_URL = "https://YOUR_TENANT.sharepoint.com/sites/YOUR_SITE_NAME"; 
+    const LIST_NAME = "YOUR_LIST_NAME_HERE"; // The exact name of your SharePoint List
+    // -------------------------------------------
+
+    async function submitToSharePoint() {
+        const msgDiv = document.getElementById('message');
+        msgDiv.style.display = 'none';
+
+        try {
+            // 1. Get the Form Digest (Security Token)
+            const contextInfoResponse = await fetch(`${SITE_URL}/_api/contextinfo`, {
+                method: "POST",
+                headers: { "Accept": "application/json;odata=verbose" }
+            });
+            const contextData = await contextInfoResponse.json();
+            const formDigest = contextData.d.GetContextWebInformation.FormDigestValue;
+
+            // 2. Prepare the Payload
+            // Internal Names must match your SharePoint columns exactly
+            const payload = {
+                "__metadata": { "type": `SP.Data.${LIST_NAME}ListItem` },
+                "Title": document.getElementById('incidentNum').value, // Assuming Title is used for INC#
+                "Category": document.getElementById('category').value,
+                "Subcategory": document.getElementById('subCategory').value,
+                "Summary": document.getElementById('summary').value,
+                "RCA": document.getElementById('rca').value
+            };
+
+            // 3. Send the Data
+            const response = await fetch(`${SITE_URL}/_api/web/lists/getbytitle('${LIST_NAME}')/items`, {
+                method: 'POST',
+                headers: {
+                    "Accept": "application/json;odata=verbose",
+                    "Content-Type": "application/json;odata=verbose",
+                    "X-RequestDigest": formDigest
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+                msgDiv.innerHTML = "Success! Incident Logged.";
+                msgDiv.style.backgroundColor = "#dff6dd";
+                msgDiv.style.color = "#107c10";
+                msgDiv.style.display = "block";
+            } else {
+                const errorData = await response.json();
+                throw new Error(errorData.error.message.value);
+            }
+        } catch (error) {
+            msgDiv.innerHTML = "Error: " + error.message;
+            msgDiv.style.backgroundColor = "#fde7e9";
+            msgDiv.style.color = "#a80000";
+            msgDiv.style.display = "block";
+        }
+    }
+</script>
+
+</body>
+</html>
