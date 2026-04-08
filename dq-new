@@ -1,0 +1,71 @@
+# 1. Launch index.html in the current directory
+$htmlPath = Join-Path -Path $PSScriptRoot -ChildPath "index.html"
+if (Test-Path $htmlPath) {
+    Start-Process $htmlPath
+} else {
+    Write-Warning "index.html not found in the script directory."
+}
+
+# 2. Configuration for the file search
+$downloadsPath = [Join-Path $env:USERPROFILE "Downloads"]
+$retryCount = 0
+$maxRetries = 5
+$attachmentFile = $null
+
+Write-Host "Searching for the INC...csv file in Downloads..." -ForegroundColor Cyan
+
+# 3. Retry loop to find the downloaded file
+while ($retryCount -lt $maxRetries) {
+    # Search for files starting with 'INC', ending with '.csv', created in the last 5 minutes
+    $attachmentFile = Get-ChildItem -Path $downloadsPath -Filter "INC*.csv" | 
+                      Where-Object { $_.CreationTime -gt (Get-Date).AddMinutes(-5) } | 
+                      Sort-Object CreationTime -Descending | 
+                      Select-Object -First 1
+
+    if ($attachmentFile) {
+        Write-Host "File found: $($attachmentFile.FullName)" -ForegroundColor Green
+        break
+    }
+
+    $retryCount++
+    if ($retryCount -lt $maxRetries) {
+        Write-Host "File not found. Retry $retryCount/$maxRetries. Waiting 10 seconds..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 10
+    }
+}
+
+# 4. Send Email via Outlook Object
+if ($attachmentFile) {
+    try {
+        $Outlook = New-Object -ComObject Outlook.Application
+        $Mail = $Outlook.CreateItem(0)
+        
+        $Mail.To = "recipient@example.com"
+        $Mail.Subject = "Incident Report: $($attachmentFile.Name)"
+        $Mail.Body = "Please find the attached incident report downloaded recently."
+        
+        # Attach the file
+        $Mail.Attachments.Add($attachmentFile.FullName)
+        
+        # Use .Send() to send immediately, or .Display() to review it first
+        $Mail.Display() 
+        Write-Host "Email prepared successfully." -ForegroundColor Green
+    } catch {
+        Write-Error "Failed to interface with Outlook. Make sure Outlook is installed and open."
+    }
+} else {
+    Write-Error "Could not find a matching CSV file after $maxRetries attempts."
+}
+
+
+
+
+
+@echo off
+:: Change directory to where the batch file is located
+cd /d "%~dp0"
+
+:: Execute the PowerShell script with the Bypass flag
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "your_script_name.ps1"
+
+pause
