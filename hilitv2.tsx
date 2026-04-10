@@ -306,9 +306,9 @@ const css = `
     --accent: #7c6af7;
     --accent2: #3ecfcf;
 
-    --crit-bg: rgba(255, 80, 80, 0.18);
-    --crit-fg: #ff6b6b;
-    --crit-border: rgba(255, 80, 80, 0.4);
+    --crit-bg: rgba(32, 178, 140, 0.16);
+    --crit-fg: #2dd4aa;
+    --crit-border: rgba(32, 178, 140, 0.38);
 
     --high-bg: rgba(255, 165, 50, 0.16);
     --high-fg: #ffb347;
@@ -493,7 +493,6 @@ const css = `
   .importance-critical {
     background: var(--crit-bg); color: var(--crit-fg);
     border: 1px solid var(--crit-border);
-    box-shadow: 0 0 6px rgba(255,80,80,0.2);
   }
   .importance-high {
     background: var(--high-bg); color: var(--high-fg);
@@ -518,7 +517,7 @@ const css = `
     line-height: 1;
   }
   .tam-label {
-    color: var(--text-muted);
+    color: #ffffff;
     font-size: 13px; font-weight: 400;
     letter-spacing: 0.04em;
   }
