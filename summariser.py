@@ -203,3 +203,55 @@ print("Most Important Words:")
 for kw, score in keywords:
     # In YAKE, a LOWER score means MORE important
     print(f"- {kw}")
+
+
+  #fastapi
+  # 
+  #from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+import yake
+
+app = FastAPI(title="YAKE Importance API")
+
+# Define the request model with your character constraints
+class TextRequest(BaseModel):
+    text: str = Field(..., min_length=150, max_length=400)
+
+# Initialize YAKE (Outside the function for better performance)
+# lan="en", n-gram=3, top 10 keywords
+kw_extractor = yake.KeywordExtractor(
+    lan="en", 
+    n=3, 
+    dedupLim=0.9, 
+    top=10, 
+    features=None
+)
+
+@app.post("/analyze-importance")
+async def analyze_importance(request: TextRequest):
+    """
+    Takes a paragraph and returns keywords with their importance scores.
+    Note: In YAKE, a LOWER score means HIGHER importance.
+    """
+    try:
+        # Extract keywords
+        # YAKE returns a list of tuples: (keyword, score)
+        raw_keywords = kw_extractor.extract_keywords(request.text)
+        
+        # Format the response
+        importance_data = [
+            {"phrase": kw[0], "score": round(kw[1], 4)} 
+            for kw in raw_keywords
+        ]
+        
+        return {
+            "input_length": len(request.text),
+            "importance_results": importance_data
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)  
