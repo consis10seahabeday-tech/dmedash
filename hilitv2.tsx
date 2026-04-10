@@ -303,18 +303,18 @@ function LineTokens({
 
 // ── Icons ──────────────────────────────────────────────────────────────────
 const CopyIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <rect x="9" y="9" width="13" height="13" rx="2" />
     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
   </svg>
 );
 const CheckIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
     <polyline points="20 6 9 17 4 12" />
   </svg>
 );
 const CloseIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
     <line x1="18" y1="6" x2="6" y2="18" />
     <line x1="6" y1="6" x2="18" y2="18" />
   </svg>
@@ -322,7 +322,7 @@ const CloseIcon = () => (
 
 // ── CSS ────────────────────────────────────────────────────────────────────
 const css = `
-  @import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap');
 
   :root {
     --bg: #0f0f11;
@@ -422,9 +422,9 @@ const css = `
   .tam-hint.warn { color: var(--high-fg); border-color: var(--high-border); }
 
   .tam-btn {
-    display: flex; align-items: center; gap: 6px;
-    padding: 6px 14px; border-radius: 7px;
-    font-family: inherit; font-size: 12px; font-weight: 500;
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 20px; border-radius: 8px;
+    font-family: inherit; font-size: 14px; font-weight: 500;
     border: 1px solid; cursor: pointer;
     transition: all 0.15s;
   }
@@ -494,8 +494,8 @@ const css = `
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 12px 14px;
-    font-family: 'Instrument Serif', serif;
-    font-size: 14.5px; line-height: 1.85;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px; line-height: 1.8;
     color: var(--text);
     overflow-y: auto;
     white-space: pre-wrap;
@@ -507,10 +507,8 @@ const css = `
   .line-key {
     color: var(--key-fg);
     font-weight: 700;
-    font-style: italic;
     border-bottom: 1px solid var(--key-border);
     padding-bottom: 1px;
-    font-family: 'Instrument Serif', serif;
   }
 
   mark {
