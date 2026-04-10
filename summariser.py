@@ -77,3 +77,37 @@ raw_text = ("The renewable energy sector is growing rapidly as countries strive 
 
 summary = simple_summarizer(raw_text)
 print(f"Summary ({len(summary)} chars): {summary}")
+
+#v3
+import os
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+
+# 1. Your Artifactory details
+model_id = "sshleifer/distilbart-cnn-12-6"
+
+# 2. Explicitly load the model and tokenizer
+# This bypasses the 'Unknown Task' error entirely
+print("Loading model from Artifactory...")
+tokenizer = AutoTokenizer.from_pretrained(model_id, token=True)
+model = AutoModelForSeq2SeqLM.from_pretrained(model_id, token=True)
+
+# 3. Create the pipeline by passing the objects directly
+# We still give it a name, but since we provide the model, it's more stable
+summarizer = pipeline("summarization", model=model, tokenizer=tokenizer)
+
+# 4. Your target text
+text = "Replace this with your 150-500 character paragraph."
+
+# 5. Generate with character-limit logic
+# max_new_tokens=25 ensures the output stays very short (under 101 chars)
+output = summarizer(
+    text, 
+    max_new_tokens=25, 
+    min_new_tokens=5, 
+    do_sample=False
+)
+
+print("-" * 30)
+print("Final Summary:")
+print(output[0]['summary_text'])
+print(f"Character Count: {len(output[0]['summary_text'])}")
