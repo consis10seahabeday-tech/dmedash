@@ -111,3 +111,55 @@ print("-" * 30)
 print("Final Summary:")
 print(output[0]['summary_text'])
 print(f"Character Count: {len(output[0]['summary_text'])}")
+
+
+#v4
+from transformers import pipeline
+
+# If your Artifactory mirrors Hugging Face, use the model name.
+# If you found it in your local registry, replace with that path.
+model_name = "Falconsai/text_summarization"
+
+try:
+    # Set framework to 'pt' (PyTorch) for typical banking IT environments
+    summarizer = pipeline("summarization", model=model_name, framework="pt")
+
+    def get_summary(text):
+        # We set max_length very low (20-25 tokens) to hit your <101 char goal
+        # T5-small models generally produce ~4 chars per token
+        summary = summarizer(text, max_length=25, min_length=5, do_sample=False)
+        result = summary[0]['summary_text']
+        
+        # Enforce strict 100 character safety limit
+        return result[:100] if len(result) > 100 else result
+
+    # Test
+    my_input = ("The banking sector is increasingly adopting AI to automate "
+                "routine tasks and improve risk assessment. This shift "
+                "allows junior developers to focus on building complex "
+                "Retrieval-Augmented Generation systems for internal use.")
+    
+    print(f"Summary: {get_summary(my_input)}")
+
+except Exception as e:
+    print(f"Could not load model: {e}")
+
+#v5
+from sumy.parsers.plaintext import PlaintextParser
+from sumy.nlp.tokenizers import Tokenizer
+from sumy.summarizers.lsa import LsaSummarizer
+
+def quick_summarize(text):
+    # Standard NLP tools for splitting text
+    parser = PlaintextParser.from_string(text, Tokenizer("english"))
+    summarizer = LsaSummarizer()
+    
+    # Get the 1 most important sentence
+    summary = summarizer(parser.document, 1)
+    
+    # Convert list to string and trim to 100 chars
+    result = str(summary[0])
+    return result[:100]
+
+input_text = "Your 150-400 character paragraph goes here..."
+print(quick_summarize(input_text))
