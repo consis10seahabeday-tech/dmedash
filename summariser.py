@@ -145,21 +145,41 @@ except Exception as e:
     print(f"Could not load model: {e}")
 
 #v5
-from sumy.parsers.plaintext import PlaintextParser
-from sumy.nlp.tokenizers import Tokenizer
-from sumy.summarizers.lsa import LsaSummarizer
+import re
+from collections import Counter
 
-def quick_summarize(text):
-    # Standard NLP tools for splitting text
-    parser = PlaintextParser.from_string(text, Tokenizer("english"))
-    summarizer = LsaSummarizer()
+def summarizer_offline(text):
+    # 1. Split into sentences using regex (no NLTK needed)
+    # This looks for punctuation followed by a space
+    sentences = re.split(r'(?<=[.!?]) +', text)
     
-    # Get the 1 most important sentence
-    summary = summarizer(parser.document, 1)
+    # 2. Simple word scoring
+    # We filter out common short words manually
+    stop_words = {'the', 'and', 'is', 'in', 'it', 'to', 'of', 'for', 'with', 'on', 'at', 'by', 'an', 'this', 'that'}
+    words = re.findall(r'\w+', text.lower())
     
-    # Convert list to string and trim to 100 chars
-    result = str(summary[0])
-    return result[:100]
+    # Count frequency of "important" words
+    freq_table = Counter(word for word in words if word not in stop_words)
+    
+    # 3. Score each sentence based on word frequency
+    sent_scores = {}
+    for sentence in sentences:
+        for word in re.findall(r'\w+', sentence.lower()):
+            if word in freq_table:
+                sent_scores[sentence] = sent_scores.get(sentence, 0) + freq_table[word]
+    
+    # 4. Pick the top sentence
+    if not sent_scores:
+        return text[:100]
+        
+    summary = max(sent_scores, key=sent_scores.get)
+    
+    # 5. Strict character limit check
+    if len(summary) > 100:
+        return summary[:97].strip() + "..."
+        
+    return summary
 
-input_text = "Your 150-400 character paragraph goes here..."
-print(quick_summarize(input_text))
+# Example
+text_input = "AI is changing the banking industry by automating data entry. Junior developers are now building RAG systems to handle complex queries. This improves efficiency across the entire firm."
+print(summarizer_offline(text_input))
