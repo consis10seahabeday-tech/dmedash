@@ -146,12 +146,9 @@ export default function TextAnalysisModal({
           {/* Header */}
           <div className="tam-header">
             <div className="tam-title">
-              <span className="tam-dot" />
               <span className="tam-char-display">
-                <span className="tam-brace">{"{"}</span>
                 <span className="tam-count">{content.length}</span>
                 <span className="tam-label"> characters</span>
-                <span className="tam-brace">{"}"}</span>
               </span>
               {loading && <span className="tam-spinner" />}
             </div>
@@ -278,18 +275,18 @@ function LineTokens({
 
 // ── Icons ──────────────────────────────────────────────────────────────────
 const CopyIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <rect x="9" y="9" width="13" height="13" rx="2" />
     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
   </svg>
 );
 const CheckIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
     <polyline points="20 6 9 17 4 12" />
   </svg>
 );
 const CloseIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
     <line x1="18" y1="6" x2="6" y2="18" />
     <line x1="6" y1="6" x2="18" y2="18" />
   </svg>
@@ -345,7 +342,7 @@ const css = `
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 14px;
-    width: min(92vw, 960px);
+    width: min(96vw, 1200px);
     max-height: 95vh;
     height: 80vh;
     display: flex; flex-direction: column;
@@ -398,9 +395,9 @@ const css = `
   .tam-hint.warn { color: var(--high-fg); border-color: var(--high-border); }
 
   .tam-btn {
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 20px; border-radius: 8px;
-    font-family: inherit; font-size: 14px; font-weight: 500;
+    display: flex; align-items: center; gap: 10px;
+    padding: 13px 28px; border-radius: 9px;
+    font-family: inherit; font-size: 16px; font-weight: 500;
     border: 1px solid; cursor: pointer;
     transition: all 0.15s;
   }
@@ -512,21 +509,17 @@ const css = `
   }
 
   .tam-char-display {
-    display: flex; align-items: baseline; gap: 3px;
-    font-size: 14px;
-  }
-  .tam-brace {
-    color: var(--text-muted);
-    font-size: 16px; font-weight: 400;
+    display: flex; align-items: baseline; gap: 6px;
   }
   .tam-count {
     color: var(--accent);
-    font-size: 15px; font-weight: 600;
-    min-width: 2ch; text-align: center;
+    font-size: 26px; font-weight: 700;
+    min-width: 2ch;
+    line-height: 1;
   }
   .tam-label {
     color: var(--text-muted);
-    font-size: 12px; font-weight: 400;
+    font-size: 13px; font-weight: 400;
     letter-spacing: 0.04em;
   }
 
