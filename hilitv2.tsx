@@ -46,14 +46,14 @@ export default function TextAnalysisModal({
 
   // Fetch importance when modal opens or content changes (debounced)
   const fetchImportance = useCallback(async (text: string) => {
-    if (text.length < 150 || text.length > 400) {
+    if (text.length < 1) {
       setImportance([]);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("http://localhost:8000/analyze-importance", {
+      const res = await fetch("http://10.105.35.8:8000/analyze-importance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
@@ -147,20 +147,15 @@ export default function TextAnalysisModal({
           <div className="tam-header">
             <div className="tam-title">
               <span className="tam-dot" />
-              Text Analysis
+              <span className="tam-char-display">
+                <span className="tam-brace">{"{"}</span>
+                <span className="tam-count">{content.length}</span>
+                <span className="tam-label"> characters</span>
+                <span className="tam-brace">{"}"}</span>
+              </span>
               {loading && <span className="tam-spinner" />}
             </div>
             <div className="tam-actions">
-              {content.length < 150 && (
-                <span className="tam-hint">
-                  {150 - content.length} more chars for analysis
-                </span>
-              )}
-              {content.length > 400 && (
-                <span className="tam-hint warn">
-                  Exceeds 400 chars — trim for analysis
-                </span>
-              )}
               <button
                 className="tam-btn tam-btn-copy"
                 onClick={handleCopy}
@@ -198,10 +193,7 @@ export default function TextAnalysisModal({
                 spellCheck
               />
               <div className="tam-char-counter">
-                <span className={content.length > 400 ? "warn" : ""}>
-                  {content.length}
-                </span>{" "}
-                / 400
+                <span>{content.length}</span> / 2000
               </div>
             </div>
 
@@ -211,23 +203,6 @@ export default function TextAnalysisModal({
               <div className="tam-preview">{renderHighlighted()}</div>
 
               {error && <div className="tam-error">{error}</div>}
-
-              {/* Legend */}
-              {importance.length > 0 && (
-                <div className="tam-legend">
-                  <span className="legend-item importance-critical">
-                    ● Critical
-                  </span>
-                  <span className="legend-item importance-high">● High</span>
-                  <span className="legend-item importance-medium">
-                    ● Medium
-                  </span>
-                  <span className="legend-item importance-low">● Low</span>
-                  <span className="legend-item line-key-legend">
-                    ◆ Line key
-                  </span>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -371,7 +346,8 @@ const css = `
     border: 1px solid var(--border);
     border-radius: 14px;
     width: min(92vw, 960px);
-    max-height: 85vh;
+    max-height: 95vh;
+    height: 80vh;
     display: flex; flex-direction: column;
     box-shadow: 0 32px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04);
     animation: slideUp 0.22s cubic-bezier(0.22, 1, 0.36, 1);
@@ -535,6 +511,25 @@ const css = `
     border: 1px solid var(--low-border);
   }
 
+  .tam-char-display {
+    display: flex; align-items: baseline; gap: 3px;
+    font-size: 14px;
+  }
+  .tam-brace {
+    color: var(--text-muted);
+    font-size: 16px; font-weight: 400;
+  }
+  .tam-count {
+    color: var(--accent);
+    font-size: 15px; font-weight: 600;
+    min-width: 2ch; text-align: center;
+  }
+  .tam-label {
+    color: var(--text-muted);
+    font-size: 12px; font-weight: 400;
+    letter-spacing: 0.04em;
+  }
+
   .tam-error {
     margin-top: 10px; padding: 8px 12px;
     background: rgba(255,80,80,0.1);
@@ -542,18 +537,6 @@ const css = `
     border-radius: 6px;
     font-size: 12px; color: var(--crit-fg);
   }
-
-  .tam-legend {
-    display: flex; flex-wrap: wrap; gap: 8px;
-    margin-top: 10px;
-    font-size: 11px;
-  }
-  .legend-item { display: flex; align-items: center; gap: 4px; }
-  .legend-item.importance-critical { color: var(--crit-fg); background: none; border: none; padding: 0; }
-  .legend-item.importance-high { color: var(--high-fg); background: none; border: none; padding: 0; }
-  .legend-item.importance-medium { color: var(--med-fg); background: none; border: none; padding: 0; }
-  .legend-item.importance-low { color: var(--low-fg); background: none; border: none; padding: 0; }
-  .legend-item.line-key-legend { color: var(--key-fg); }
 
   @media (max-width: 640px) {
     .tam-body { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; overflow-y: auto; }
