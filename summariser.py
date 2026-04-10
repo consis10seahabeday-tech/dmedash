@@ -183,3 +183,23 @@ def summarizer_offline(text):
 # Example
 text_input = "AI is changing the banking industry by automating data entry. Junior developers are now building RAG systems to handle complex queries. This improves efficiency across the entire firm."
 print(summarizer_offline(text_input))
+
+
+#v6
+
+import yake
+
+text = """
+Artificial Intelligence is rapidly transforming the modern workplace by automating 
+repetitive tasks. While some fear job displacement, many experts argue that AI 
+will create new opportunities for humans to focus on complex problem-solving.
+"""
+
+# Initialize extractor (top 5 keywords, within 1-3 word phrases)
+kw_extractor = yake.KeywordExtractor(lan="en", n=1, top=5)
+keywords = kw_extractor.extract_keywords(text)
+
+print("Most Important Words:")
+for kw, score in keywords:
+    # In YAKE, a LOWER score means MORE important
+    print(f"- {kw}")
