@@ -230,6 +230,9 @@ export default function TextAnalysisModal({
                 <span className="tam-count">{content.length}</span>
                 <span className="tam-label"> characters</span>
               </span>
+              <span className="tam-instruction">
+                Edit the content to make it <strong>250 characters</strong>, then copy to clipboard
+              </span>
               {loading && <span className="tam-spinner" />}
             </div>
             <div className="tam-actions">
@@ -521,7 +524,20 @@ const css = `
     border: 1px solid var(--low-border);
   }
 
-  .tam-char-display {
+  .tam-instruction {
+    font-size: 12px; font-weight: 400;
+    color: var(--text-muted);
+    letter-spacing: 0.01em;
+    padding: 6px 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    white-space: nowrap;
+  }
+  .tam-instruction strong {
+    color: var(--accent);
+    font-weight: 600;
+  }
     display: flex; align-items: baseline; gap: 6px;
   }
   .tam-count {
