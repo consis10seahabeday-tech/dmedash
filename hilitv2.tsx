@@ -14,7 +14,6 @@ interface TextAnalysisModalProps {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function getHighlightColor(score: number, min: number, max: number): string {
-  // Lower YAKE score = more important → map to stronger highlight
   const normalized = max === min ? 0.5 : 1 - (score - min) / (max - min);
   if (normalized > 0.75) return "importance-critical";
   if (normalized > 0.45) return "importance-high";
@@ -22,8 +21,112 @@ function getHighlightColor(score: number, min: number, max: number): string {
   return "importance-low";
 }
 
-function escapeRegex(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// ── Caret save/restore for contenteditable ─────────────────────────────────
+function getCaretOffset(el: HTMLElement): number {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return 0;
+  const range = sel.getRangeAt(0).cloneRange();
+  range.selectNodeContents(el);
+  range.setEnd(sel.getRangeAt(0).endContainer, sel.getRangeAt(0).endOffset);
+  return range.toString().length;
+}
+
+function setCaretOffset(el: HTMLElement, offset: number) {
+  const walk = (node: Node, remaining: { left: number }): boolean => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const len = node.textContent?.length ?? 0;
+      if (remaining.left <= len) {
+        const range = document.createRange();
+        const sel = window.getSelection();
+        range.setStart(node, remaining.left);
+        range.collapse(true);
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        return true;
+      }
+      remaining.left -= len;
+      return false;
+    }
+    // <br> counts as 1 newline character
+    if ((node as Element).tagName === "BR") {
+      if (remaining.left === 0) {
+        const range = document.createRange();
+        const sel = window.getSelection();
+        range.setStartBefore(node);
+        range.collapse(true);
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        return true;
+      }
+      remaining.left -= 1;
+      return false;
+    }
+    for (const child of Array.from(node.childNodes)) {
+      if (walk(child, remaining)) return true;
+    }
+    return false;
+  };
+  walk(el, { left: offset });
+}
+
+// ── Build highlighted HTML string ──────────────────────────────────────────
+function buildHTML(text: string, importance: ImportanceResult[]): string {
+  const scores = importance.map((i) => i.score);
+  const min = Math.min(...scores);
+  const max = Math.max(...scores);
+
+  const escape = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const tokenize = (segment: string): string =>
+    segment
+      .split(/(\s+)/)
+      .map((token) => {
+        if (/^\s+$/.test(token)) return token;
+        const clean = token.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const match = importance.find((imp) =>
+          imp.phrase.toLowerCase().split(/\s+/).some((pw) => pw === clean)
+        );
+        if (match) {
+          const cls = getHighlightColor(match.score, min, max);
+          return `<mark class="${cls}">${escape(token)}</mark>`;
+        }
+        return escape(token);
+      })
+      .join("");
+
+  return text
+    .split("\n")
+    .map((line) => {
+      if (line === "") return `<div><br></div>`;
+      const colonIdx = line.indexOf(":");
+      if (colonIdx > 0) {
+        const key = line.slice(0, colonIdx);
+        const rest = line.slice(colonIdx);
+        return `<div><strong class="line-key">${escape(key)}</strong>${tokenize(rest)}</div>`;
+      }
+      return `<div>${tokenize(line)}</div>`;
+    })
+    .join("");
+}
+
+// ── Extract plain text from contenteditable ────────────────────────────────
+function extractPlainText(el: HTMLElement): string {
+  const lines: string[] = [];
+  el.childNodes.forEach((node) => {
+    if ((node as Element).tagName === "DIV") {
+      const inner = node as HTMLElement;
+      // single <br> = empty line
+      if (inner.childNodes.length === 1 && (inner.childNodes[0] as Element).tagName === "BR") {
+        lines.push("");
+      } else {
+        lines.push(inner.textContent ?? "");
+      }
+    } else {
+      lines.push(node.textContent ?? "");
+    }
+  });
+  return lines.join("\n");
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────
@@ -37,19 +140,34 @@ export default function TextAnalysisModal({
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Sync content when input changes
+  const editorRef = useRef<HTMLDivElement>(null);
+  const isComposing = useRef(false);
+  // Track whether the last change came from user input (not from re-render)
+  const suppressNextRender = useRef(false);
+
+  // Sync content when input prop changes
   useEffect(() => {
     setContent(input);
   }, [input]);
 
-  // Fetch importance when modal opens or content changes (debounced)
-  const fetchImportance = useCallback(async (text: string) => {
-    if (text.length < 1) {
-      setImportance([]);
+  // Re-render highlighted HTML into the contenteditable whenever content or
+  // importance changes, preserving caret position.
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    if (suppressNextRender.current) {
+      suppressNextRender.current = false;
       return;
     }
+    const offset = document.activeElement === el ? getCaretOffset(el) : -1;
+    el.innerHTML = buildHTML(content, importance);
+    if (offset >= 0) setCaretOffset(el, offset);
+  }, [content, importance]);
+
+  // Fetch importance (debounced)
+  const fetchImportance = useCallback(async (text: string) => {
+    if (text.length < 1) { setImportance([]); return; }
     setLoading(true);
     setError(null);
     try {
@@ -75,65 +193,27 @@ export default function TextAnalysisModal({
     return () => clearTimeout(id);
   }, [content, isOpen, fetchImportance]);
 
+  // Handle user typing in contenteditable
+  const handleInput = () => {
+    if (isComposing.current) return;
+    const el = editorRef.current;
+    if (!el) return;
+    const plain = extractPlainText(el);
+    suppressNextRender.current = true;
+    setContent(plain);
+  };
+
   const handleCopy = async () => {
     await navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // ── Render highlighted HTML ──────────────────────────────────────────────
-  const renderHighlighted = () => {
-    const scores = importance.map((i) => i.score);
-    const min = Math.min(...scores);
-    const max = Math.max(...scores);
-
-    const lines = content.split("\n");
-
-    return lines.map((line, li) => {
-      const hasColon = line.includes(":");
-      const words = line.split(/(\s+)/);
-
-      // Apply importance markup to the full line text
-      let lineHtml = words
-        .map((token) => {
-          if (/^\s+$/.test(token)) return token;
-          // Check if token is part of any importance phrase
-          const match = importance.find((imp) =>
-            imp.phrase
-              .toLowerCase()
-              .split(/\s+/)
-              .some(
-                (pw) => pw === token.toLowerCase().replace(/[^a-z0-9]/g, "")
-              )
-          );
-          if (match) {
-            const cls = getHighlightColor(match.score, min, max);
-            return `<mark class="${cls}">${token}</mark>`;
-          }
-          return `<span>${token}</span>`;
-        })
-        .join("");
-
-      // Bold first word if line has ':'
-      if (hasColon && words.length > 0) {
-        const firstWord = words[0];
-        lineHtml = lineHtml.replace(
-          new RegExp(`^(<mark[^>]*>|<span>)?${escapeRegex(firstWord)}`),
-          (m) => `<strong class="line-key">${firstWord}</strong>` + m.slice(m.indexOf(firstWord) + firstWord.length)
-        );
-      }
-
-      return (
-        <span key={li} className={`line-block${hasColon ? " has-colon" : ""}`}>
-          {li > 0 && <br />}
-          {hasColon ? (
-            <LineWithKey line={line} importance={importance} min={min} max={max} />
-          ) : (
-            <LineTokens tokens={words} importance={importance} min={min} max={max} />
-          )}
-        </span>
-      );
-    });
+  // Prevent paste from injecting rich HTML
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData("text/plain");
+    document.execCommand("insertText", false, text);
   };
 
   if (!isOpen) return null;
@@ -153,122 +233,32 @@ export default function TextAnalysisModal({
               {loading && <span className="tam-spinner" />}
             </div>
             <div className="tam-actions">
-              <button
-                className="tam-btn tam-btn-copy"
-                onClick={handleCopy}
-                title="Copy to clipboard"
-              >
-                {copied ? (
-                  <>
-                    <CheckIcon /> Copied
-                  </>
-                ) : (
-                  <>
-                    <CopyIcon /> Copy
-                  </>
-                )}
+              <button className="tam-btn tam-btn-copy" onClick={handleCopy}>
+                {copied ? <><CheckIcon /> Copied</> : <><CopyIcon /> Copy</>}
               </button>
-              <button
-                className="tam-btn tam-btn-cancel"
-                onClick={() => setIsOpen(false)}
-              >
+              <button className="tam-btn tam-btn-cancel" onClick={() => setIsOpen(false)}>
                 <CloseIcon /> Cancel
               </button>
             </div>
           </div>
 
-          {/* Body — split view */}
-          <div className="tam-body">
-            {/* Left: editable textarea */}
-            <div className="tam-pane tam-pane-edit">
-              <div className="tam-pane-label">EDIT</div>
-              <textarea
-                ref={textareaRef}
-                className="tam-textarea"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                spellCheck
-              />
-              <div className="tam-char-counter">
-                <span>{content.length}</span> / 2000
-              </div>
-            </div>
-
-            {/* Right: highlighted preview */}
-            <div className="tam-pane tam-pane-preview">
-              <div className="tam-pane-label">PREVIEW</div>
-              <div className="tam-preview">{renderHighlighted()}</div>
-
-              {error && <div className="tam-error">{error}</div>}
-            </div>
+          {/* Single editor pane */}
+          <div className="tam-body-single">
+            <div
+              ref={editorRef}
+              className="tam-editor"
+              contentEditable
+              suppressContentEditableWarning
+              onInput={handleInput}
+              onPaste={handlePaste}
+              onCompositionStart={() => { isComposing.current = true; }}
+              onCompositionEnd={() => { isComposing.current = false; handleInput(); }}
+              spellCheck
+            />
+            {error && <div className="tam-error">{error}</div>}
           </div>
         </div>
       </div>
-    </>
-  );
-}
-
-// ── Sub-components ─────────────────────────────────────────────────────────
-function LineWithKey({
-  line,
-  importance,
-  min,
-  max,
-}: {
-  line: string;
-  importance: ImportanceResult[];
-  min: number;
-  max: number;
-}) {
-  const colonIdx = line.indexOf(":");
-  const key = line.slice(0, colonIdx);
-  const rest = line.slice(colonIdx); // includes ':'
-
-  return (
-    <>
-      <strong className="line-key">{key}</strong>
-      <LineTokens
-        tokens={rest.split(/(\s+)/)}
-        importance={importance}
-        min={min}
-        max={max}
-      />
-    </>
-  );
-}
-
-function LineTokens({
-  tokens,
-  importance,
-  min,
-  max,
-}: {
-  tokens: string[];
-  importance: ImportanceResult[];
-  min: number;
-  max: number;
-}) {
-  return (
-    <>
-      {tokens.map((token, i) => {
-        if (/^\s+$/.test(token)) return <span key={i}>{token}</span>;
-        const clean = token.toLowerCase().replace(/[^a-z0-9]/g, "");
-        const match = importance.find((imp) =>
-          imp.phrase
-            .toLowerCase()
-            .split(/\s+/)
-            .some((pw) => pw === clean)
-        );
-        if (match) {
-          const cls = getHighlightColor(match.score, min, max);
-          return (
-            <mark key={i} className={cls} title={`score: ${match.score}`}>
-              {token}
-            </mark>
-          );
-        }
-        return <span key={i}>{token}</span>;
-      })}
     </>
   );
 }
@@ -475,7 +465,31 @@ const css = `
     word-break: break-word;
   }
 
-  .line-block { display: contents; }
+  .tam-body-single {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+    padding: 20px 24px;
+    background: var(--bg);
+    overflow: hidden;
+  }
+
+  .tam-editor {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 22px;
+    font-family: 'Inter', sans-serif;
+    font-size: 15px; line-height: 1.85;
+    color: var(--text);
+    overflow-y: auto;
+    word-break: break-word;
+    outline: none;
+    transition: border-color 0.15s;
+    cursor: text;
+  }
+  .tam-editor:focus { border-color: var(--accent); }
+  .tam-editor div { min-height: 1.85em; }
 
   .line-key {
     color: var(--key-fg);
@@ -531,7 +545,6 @@ const css = `
   }
 
   @media (max-width: 640px) {
-    .tam-body { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; overflow-y: auto; }
-    .tam-pane-edit { border-right: none; border-bottom: 1px solid var(--border); }
+    .tam-modal { width: 100vw; height: 100vh; border-radius: 0; }
   }
 `;
